@@ -25,7 +25,9 @@ function loadServiceAccountCredentials(): object | null {
   try {
     // Inline JSON (e.g. on Vercel: paste entire service account JSON as env var)
     if (trimmed.startsWith('{')) {
-      return JSON.parse(trimmed) as object
+      // Some platforms store env vars with literal \n instead of newlines
+      const normalized = trimmed.replace(/\\n/g, '\n')
+      return JSON.parse(normalized) as object
     }
     // File path (e.g. locally: ./service-account.json)
     const path = join(process.cwd(), trimmed)
@@ -52,7 +54,11 @@ export async function appendSetLogRows(
   rows: SetLogRow[]
 ): Promise<void> {
   const sheets = getSheetsClient()
-  if (!sheets) return
+  if (!sheets) {
+    throw new Error(
+      'Google credentials not loaded. Set GOOGLE_SERVICE_ACCOUNT_JSON in Vercel (paste full JSON, one line).'
+    )
+  }
   const values = rows.map((r) => [
     r.timestamp,
     r.session_id,
