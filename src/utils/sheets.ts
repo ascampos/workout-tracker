@@ -39,8 +39,12 @@ function loadServiceAccountCredentials(): { credentials: object } | { error: str
         return { error: 'GOOGLE_SERVICE_ACCOUNT_JSON looks quoted but is not valid. Paste the raw JSON only (no outer quotes).' }
       }
     }
-    // Some platforms store literal \n instead of newlines in the private_key
-    const normalized = toParse.replace(/\\n/g, '\n')
+    // Fix control characters: JSON strings must not contain raw newlines. If the user
+    // pasted multi-line JSON, escape real newlines as \n so JSON.parse can read it.
+    const normalized = toParse
+      .replace(/\r\n/g, '\\n')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\n')
     try {
       const parsed = JSON.parse(normalized) as object
       if (!parsed || typeof parsed !== 'object') {
