@@ -19,10 +19,16 @@ type SetLogRow = {
 }
 
 function loadServiceAccountCredentials(): object | null {
-  const pathFromEnv = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-  if (!pathFromEnv?.trim()) return null
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
+  if (!raw?.trim()) return null
+  const trimmed = raw.trim()
   try {
-    const path = join(process.cwd(), pathFromEnv.trim())
+    // Inline JSON (e.g. on Vercel: paste entire service account JSON as env var)
+    if (trimmed.startsWith('{')) {
+      return JSON.parse(trimmed) as object
+    }
+    // File path (e.g. locally: ./service-account.json)
+    const path = join(process.cwd(), trimmed)
     const content = readFileSync(path, 'utf-8')
     return JSON.parse(content) as object
   } catch {
