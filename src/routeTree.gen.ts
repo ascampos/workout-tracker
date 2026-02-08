@@ -9,50 +9,193 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as AuthedChartsRouteImport } from './routes/_authed/charts'
+import { Route as AuthedWorkoutDayKeyRouteImport } from './routes/_authed/workout.$dayKey'
+import { Route as AuthedWorkoutDayKeyIndexRouteImport } from './routes/_authed/workout.$dayKey.index'
+import { Route as AuthedWorkoutDayKeyExerciseKeyRouteImport } from './routes/_authed/workout.$dayKey.$exerciseKey'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthedRoute = AuthedRouteImport.update({
+  id: '/_authed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedIndexRoute = AuthedIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedChartsRoute = AuthedChartsRouteImport.update({
+  id: '/charts',
+  path: '/charts',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedWorkoutDayKeyRoute = AuthedWorkoutDayKeyRouteImport.update({
+  id: '/workout/$dayKey',
+  path: '/workout/$dayKey',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedWorkoutDayKeyIndexRoute =
+  AuthedWorkoutDayKeyIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthedWorkoutDayKeyRoute,
+  } as any)
+const AuthedWorkoutDayKeyExerciseKeyRoute =
+  AuthedWorkoutDayKeyExerciseKeyRouteImport.update({
+    id: '/$exerciseKey',
+    path: '/$exerciseKey',
+    getParentRoute: () => AuthedWorkoutDayKeyRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof AuthedIndexRoute
+  '/login': typeof LoginRoute
+  '/charts': typeof AuthedChartsRoute
+  '/workout/$dayKey': typeof AuthedWorkoutDayKeyRouteWithChildren
+  '/workout/$dayKey/$exerciseKey': typeof AuthedWorkoutDayKeyExerciseKeyRoute
+  '/workout/$dayKey/': typeof AuthedWorkoutDayKeyIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/charts': typeof AuthedChartsRoute
+  '/': typeof AuthedIndexRoute
+  '/workout/$dayKey/$exerciseKey': typeof AuthedWorkoutDayKeyExerciseKeyRoute
+  '/workout/$dayKey': typeof AuthedWorkoutDayKeyIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_authed': typeof AuthedRouteWithChildren
+  '/login': typeof LoginRoute
+  '/_authed/charts': typeof AuthedChartsRoute
+  '/_authed/': typeof AuthedIndexRoute
+  '/_authed/workout/$dayKey': typeof AuthedWorkoutDayKeyRouteWithChildren
+  '/_authed/workout/$dayKey/$exerciseKey': typeof AuthedWorkoutDayKeyExerciseKeyRoute
+  '/_authed/workout/$dayKey/': typeof AuthedWorkoutDayKeyIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/charts'
+    | '/workout/$dayKey'
+    | '/workout/$dayKey/$exerciseKey'
+    | '/workout/$dayKey/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/login'
+    | '/charts'
+    | '/'
+    | '/workout/$dayKey/$exerciseKey'
+    | '/workout/$dayKey'
+  id:
+    | '__root__'
+    | '/_authed'
+    | '/login'
+    | '/_authed/charts'
+    | '/_authed/'
+    | '/_authed/workout/$dayKey'
+    | '/_authed/workout/$dayKey/$exerciseKey'
+    | '/_authed/workout/$dayKey/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  AuthedRoute: typeof AuthedRouteWithChildren
+  LoginRoute: typeof LoginRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authed': {
+      id: '/_authed'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authed/': {
+      id: '/_authed/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthedIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/charts': {
+      id: '/_authed/charts'
+      path: '/charts'
+      fullPath: '/charts'
+      preLoaderRoute: typeof AuthedChartsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/workout/$dayKey': {
+      id: '/_authed/workout/$dayKey'
+      path: '/workout/$dayKey'
+      fullPath: '/workout/$dayKey'
+      preLoaderRoute: typeof AuthedWorkoutDayKeyRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/workout/$dayKey/': {
+      id: '/_authed/workout/$dayKey/'
+      path: '/'
+      fullPath: '/workout/$dayKey/'
+      preLoaderRoute: typeof AuthedWorkoutDayKeyIndexRouteImport
+      parentRoute: typeof AuthedWorkoutDayKeyRoute
+    }
+    '/_authed/workout/$dayKey/$exerciseKey': {
+      id: '/_authed/workout/$dayKey/$exerciseKey'
+      path: '/$exerciseKey'
+      fullPath: '/workout/$dayKey/$exerciseKey'
+      preLoaderRoute: typeof AuthedWorkoutDayKeyExerciseKeyRouteImport
+      parentRoute: typeof AuthedWorkoutDayKeyRoute
     }
   }
 }
 
+interface AuthedWorkoutDayKeyRouteChildren {
+  AuthedWorkoutDayKeyExerciseKeyRoute: typeof AuthedWorkoutDayKeyExerciseKeyRoute
+  AuthedWorkoutDayKeyIndexRoute: typeof AuthedWorkoutDayKeyIndexRoute
+}
+
+const AuthedWorkoutDayKeyRouteChildren: AuthedWorkoutDayKeyRouteChildren = {
+  AuthedWorkoutDayKeyExerciseKeyRoute: AuthedWorkoutDayKeyExerciseKeyRoute,
+  AuthedWorkoutDayKeyIndexRoute: AuthedWorkoutDayKeyIndexRoute,
+}
+
+const AuthedWorkoutDayKeyRouteWithChildren =
+  AuthedWorkoutDayKeyRoute._addFileChildren(AuthedWorkoutDayKeyRouteChildren)
+
+interface AuthedRouteChildren {
+  AuthedChartsRoute: typeof AuthedChartsRoute
+  AuthedIndexRoute: typeof AuthedIndexRoute
+  AuthedWorkoutDayKeyRoute: typeof AuthedWorkoutDayKeyRouteWithChildren
+}
+
+const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedChartsRoute: AuthedChartsRoute,
+  AuthedIndexRoute: AuthedIndexRoute,
+  AuthedWorkoutDayKeyRoute: AuthedWorkoutDayKeyRouteWithChildren,
+}
+
+const AuthedRouteWithChildren =
+  AuthedRoute._addFileChildren(AuthedRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  AuthedRoute: AuthedRouteWithChildren,
+  LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
