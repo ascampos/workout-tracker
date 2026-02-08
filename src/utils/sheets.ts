@@ -18,32 +18,57 @@ type SetLogRow = {
   unit: string
 }
 
-function loadServiceAccountCredentials(): object | null {
+function loadServiceAccountCredentials(): { credentials: object } | { error: string } {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-  if (!raw?.trim()) return null
+  if (!raw || typeof raw !== 'string') {
+    return { error: 'GOOGLE_SERVICE_ACCOUNT_JSON is not set in Vercel (Settings → Environment Variables).' }
+  }
   const trimmed = raw.trim()
-  try {
-    // Inline JSON (e.g. on Vercel: paste entire service account JSON as env var)
-    if (trimmed.startsWith('{')) {
-      // Some platforms store env vars with literal \n instead of newlines
-      const normalized = trimmed.replace(/\\n/g, '\n')
-      return JSON.parse(normalized) as object
+  if (!trimmed) {
+    return { error: 'GOOGLE_SERVICE_ACCOUNT_JSON is empty.' }
+  }
+
+  // Inline JSON (e.g. on Vercel)
+  if (trimmed.startsWith('{') || trimmed.startsWith('"')) {
+    let toParse = trimmed
+    // If the whole value is double-quoted (double-encoded), parse once to get the inner string
+    if (trimmed.startsWith('"')) {
+      try {
+        toParse = JSON.parse(trimmed) as string
+      } catch {
+        return { error: 'GOOGLE_SERVICE_ACCOUNT_JSON looks quoted but is not valid. Paste the raw JSON only (no outer quotes).' }
+      }
     }
-    // File path (e.g. locally: ./service-account.json)
+    // Some platforms store literal \n instead of newlines in the private_key
+    const normalized = toParse.replace(/\\n/g, '\n')
+    try {
+      const parsed = JSON.parse(normalized) as object
+      if (!parsed || typeof parsed !== 'object') {
+        return { error: 'GOOGLE_SERVICE_ACCOUNT_JSON did not parse to a JSON object.' }
+      }
+      return { credentials: parsed }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Parse error'
+      return { error: `GOOGLE_SERVICE_ACCOUNT_JSON invalid JSON: ${msg}. Paste the full service-account.json content, minified to one line.` }
+    }
+  }
+
+  // File path (e.g. locally)
+  try {
     const path = join(process.cwd(), trimmed)
     const content = readFileSync(path, 'utf-8')
-    return JSON.parse(content) as object
+    const parsed = JSON.parse(content) as object
+    return { credentials: parsed }
   } catch {
-    /* ignore */
+    return { error: `Could not read or parse file at GOOGLE_SERVICE_ACCOUNT_JSON path: ${trimmed}` }
   }
-  return null
 }
 
-function getSheetsClient() {
-  const credentials = loadServiceAccountCredentials()
-  if (!credentials) return null
+function getSheetsClient(): ReturnType<typeof google.sheets> | null {
+  const result = loadServiceAccountCredentials()
+  if ('error' in result) return null
   const auth = new google.auth.GoogleAuth({
-    credentials: credentials as Record<string, unknown>,
+    credentials: result.credentials as Record<string, unknown>,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   })
   return google.sheets({ version: 'v4', auth })
@@ -55,9 +80,8 @@ export async function appendSetLogRows(
 ): Promise<void> {
   const sheets = getSheetsClient()
   if (!sheets) {
-    throw new Error(
-      'Google credentials not loaded. Set GOOGLE_SERVICE_ACCOUNT_JSON in Vercel (paste full JSON, one line).'
-    )
+    const result = loadServiceAccountCredentials()
+    throw new Error('error' in result ? result.error : 'Google credentials not loaded.')
   }
   const values = rows.map((r) => [
     r.timestamp,
