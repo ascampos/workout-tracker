@@ -4,6 +4,17 @@ import { workoutTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
 import { logSetsFn, getHistoryFn } from '@/utils/log-sets'
 
+// Standard gym weight increments (in lb)
+const WEIGHT_PRESETS = [
+  2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30, 32.5, 35, 37.5, 40, 42.5, 45, 47.5, 50,
+  55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150,
+  155, 160, 165, 170, 175, 180, 185, 190, 195, 200, 205, 210, 215, 220, 225, 230, 235, 240, 245, 250,
+  255, 260, 265, 270, 275, 280, 285, 290, 295, 300, 305, 310, 315, 320, 325, 330, 335, 340, 345, 350,
+  360, 370, 380, 390, 400, 410, 420, 430, 440, 450, 460, 470, 480, 490, 500
+]
+
+const REPS_PRESETS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25, 30]
+
 export const Route = createFileRoute('/_authed/workout/$dayKey/$exerciseKey')({
   validateSearch: () => ({}),
   component: ExercisePage,
@@ -59,6 +70,122 @@ function clearExerciseDraft(dayKey: string, exerciseKey: string) {
   }
 }
 
+type ModalState = { type: 'weight' | 'reps'; setIndex: number } | null
+
+function SelectModal({
+  isOpen,
+  onClose,
+  title,
+  values,
+  onSelect,
+  currentValue,
+  inputMode = 'decimal',
+}: {
+  isOpen: boolean
+  onClose: () => void
+  title: string
+  values: number[]
+  onSelect: (value: number) => void
+  currentValue?: string
+  inputMode?: 'decimal' | 'numeric'
+}) {
+  const [customValue, setCustomValue] = useState('')
+
+  // Clear custom input when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setCustomValue('')
+    }
+  }, [isOpen])
+
+  if (!isOpen) return null
+
+  const current = currentValue ? parseFloat(currentValue) : null
+
+  const handleCustomSubmit = () => {
+    const val = parseFloat(customValue)
+    if (Number.isFinite(val) && val > 0) {
+      onSelect(val)
+      setCustomValue('')
+      onClose()
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-gray-900 border border-gray-700 rounded-lg w-full max-w-md max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-gray-700">
+          <h2 className="text-lg font-bold">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-white text-2xl leading-none"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="overflow-y-auto p-4 space-y-4">
+          {/* Custom input */}
+          <div className="pb-4 border-b border-gray-700">
+            <label className="block text-sm text-gray-400 mb-2">Custom value:</label>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                inputMode={inputMode}
+                placeholder="Enter value"
+                value={customValue}
+                onChange={(e) => setCustomValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleCustomSubmit()
+                  }
+                }}
+                className="flex-1 p-3 rounded bg-gray-800 border border-gray-700 text-white placeholder-gray-500"
+              />
+              <button
+                type="button"
+                onClick={handleCustomSubmit}
+                disabled={!customValue}
+                className="px-4 py-3 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                Set
+              </button>
+            </div>
+          </div>
+
+          {/* Preset buttons */}
+          <div className="grid grid-cols-4 gap-2">
+            {values.map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  onSelect(value)
+                  onClose()
+                }}
+                className={`p-3 rounded border text-center font-medium transition-colors ${
+                  current === value
+                    ? 'bg-blue-600 border-blue-500 text-white'
+                    : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-gray-600'
+                }`}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ExercisePage() {
   const { dayKey, exerciseKey } = Route.useParams()
   const template = workoutTemplates[dayKey as WorkoutDayKey]
@@ -71,6 +198,7 @@ function ExercisePage() {
   const [lastSet, setLastSet] = useState<{ weight: number; reps: number; notes: string } | null>(null)
   const [heaviestSet, setHeaviestSet] = useState<{ weight: number; reps: number; daysAgo: number } | null>(null)
   const [frequency, setFrequency] = useState<number | null>(null)
+  const [modalState, setModalState] = useState<ModalState>(null)
 
   useEffect(() => {
     if (!exercise) return
@@ -246,22 +374,28 @@ function ExercisePage() {
             key={i}
             className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 items-center min-w-0"
           >
-            <input
-              type="number"
-              inputMode="decimal"
-              placeholder="Wt"
-              value={set.weight}
-              onChange={(e) => updateSet(i, 'weight', e.target.value)}
-              className="p-3 rounded bg-gray-800 border border-gray-700 text-white placeholder-gray-500 min-w-0 w-full"
-            />
-            <input
-              type="number"
-              inputMode="numeric"
-              placeholder="Reps"
-              value={set.reps}
-              onChange={(e) => updateSet(i, 'reps', e.target.value)}
-              className="p-3 rounded bg-gray-800 border border-gray-700 text-white placeholder-gray-500 min-w-0 w-full"
-            />
+            <button
+              type="button"
+              onClick={() => setModalState({ type: 'weight', setIndex: i })}
+              className={`p-3 rounded border text-left min-w-0 w-full ${
+                set.weight
+                  ? 'bg-gray-800 border-gray-700 text-white'
+                  : 'bg-gray-800/50 border-gray-700 text-gray-500'
+              }`}
+            >
+              {set.weight ? `${set.weight} ${unit}` : 'Weight'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setModalState({ type: 'reps', setIndex: i })}
+              className={`p-3 rounded border text-left min-w-0 w-full ${
+                set.reps
+                  ? 'bg-gray-800 border-gray-700 text-white'
+                  : 'bg-gray-800/50 border-gray-700 text-gray-500'
+              }`}
+            >
+              {set.reps ? `${set.reps} reps` : 'Reps'}
+            </button>
             <button
               type="button"
               onClick={() => removeSet(i)}
@@ -336,6 +470,35 @@ function ExercisePage() {
           <span />
         )}
       </div>
+
+      {/* Weight Selection Modal */}
+      <SelectModal
+        isOpen={modalState?.type === 'weight'}
+        onClose={() => setModalState(null)}
+        title={`Select Weight (${unit})`}
+        values={WEIGHT_PRESETS}
+        onSelect={(value) => {
+          if (modalState?.setIndex != null) {
+            updateSet(modalState.setIndex, 'weight', String(value))
+          }
+        }}
+        currentValue={modalState?.setIndex != null ? sets[modalState.setIndex]?.weight : undefined}
+      />
+
+      {/* Reps Selection Modal */}
+      <SelectModal
+        isOpen={modalState?.type === 'reps'}
+        onClose={() => setModalState(null)}
+        title="Select Reps"
+        values={REPS_PRESETS}
+        onSelect={(value) => {
+          if (modalState?.setIndex != null) {
+            updateSet(modalState.setIndex, 'reps', String(value))
+          }
+        }}
+        currentValue={modalState?.setIndex != null ? sets[modalState.setIndex]?.reps : undefined}
+        inputMode="numeric"
+      />
     </div>
   )
 }

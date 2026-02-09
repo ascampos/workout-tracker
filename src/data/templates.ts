@@ -118,6 +118,8 @@ export const workoutTemplates: Record<WorkoutDayKey, WorkoutTemplate> = {
       { exercise_key: 'pallof_press', exercise_name: 'Tall Kneeling Pallof Press (Cable)' },
       { exercise_key: 'straight_leg_lowers', exercise_name: 'Straight Leg Lowers w/ Overhead DB' },
       { exercise_key: 'reverse_crunch', exercise_name: 'Reverse Crunch' },
+      { exercise_key: 'cable_crunches', exercise_name: 'Cable Crunches' },
+
     ],
   },
 }
