@@ -44,6 +44,8 @@ export const workoutTemplates: Record<WorkoutDayKey, WorkoutTemplate> = {
       { exercise_key: 'cable_crunches', exercise_name: 'Cable Crunches' },
       { exercise_key: 'machine_crunch', exercise_name: 'Machine Crunch' },
       { exercise_key: 'leg_raises', exercise_name: 'Leg Raises' },
+      { exercise_key: 'biceps_isolation', exercise_name: 'Biceps Isolation' },
+      { exercise_key: 'triceps_isolation', exercise_name: 'Triceps Isolation' },
       { exercise_key: 'captains_chair', exercise_name: "Captain's Chair" },
     ],
   },

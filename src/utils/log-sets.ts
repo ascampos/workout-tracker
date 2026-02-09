@@ -91,7 +91,7 @@ const exerciseKeyToName = (() => {
   return m
 })()
 
-export type SessionSet = { id: string; weight: number; reps: number; notes: string; unit: string }
+export type SessionSet = { id: string; weight: number; reps: number; notes: string; unit: string; timestamp: string }
 export type SessionExercise = { exercise_key: string; exercise_name: string; sets: SessionSet[] }
 export type SessionSummary = {
   session_id: string
@@ -121,26 +121,38 @@ export const getSessionHistoryFn = createServerFn({ method: 'GET' })
     }
     const sessions: SessionSummary[] = []
     for (const [sessionId, sessionRows] of bySession.entries()) {
-      const byExercise = new Map<string, (SessionSet & { timestamp: string })[]>()
+      const byExercise = new Map<string, SessionSet[]>()
       const started_at = sessionRows[0]?.timestamp ?? ''
       for (const r of sessionRows) {
         const sets = byExercise.get(r.exercise_key) ?? []
-        sets.push({ id: r.id, weight: r.weight, reps: r.reps, notes: r.notes, unit: r.unit || 'lb', timestamp: r.timestamp })
+        const newSet: SessionSet = {
+          id: r.id,
+          weight: r.weight,
+          reps: r.reps,
+          notes: r.notes,
+          unit: r.unit || 'lb',
+          timestamp: r.timestamp
+        }
+        sets.push(newSet)
         byExercise.set(r.exercise_key, sets)
       }
       const day_key = sessionRows[0]?.day_key ?? ''
+
       const exercises: SessionExercise[] = []
-      for (const [exKey, setsWithTimestamp] of byExercise.entries()) {
+      for (const [exKey, sets] of byExercise.entries()) {
         // Sort sets by timestamp (oldest first - chronological order)
-        const sortedSets = setsWithTimestamp.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-        // Remove timestamp from the sets before returning
-        const sets: SessionSet[] = sortedSets.map(({ timestamp, ...set }) => set)
+        sets.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
         exercises.push({
           exercise_key: exKey,
           exercise_name: exerciseKeyToName.get(exKey) ?? exKey.replace(/_/g, ' '),
-          sets,
+          sets: sets,
         })
       }
+
+      // Sort exercises by when they were first performed (using first set's timestamp)
+      exercises.sort((a, b) =>
+        (a.sets[0]?.timestamp ?? '').localeCompare(b.sets[0]?.timestamp ?? '')
+      )
       sessions.push({
         session_id: sessionId,
         started_at,
