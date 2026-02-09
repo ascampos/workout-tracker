@@ -165,3 +165,67 @@ export async function getSetLogHistory(
   out.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
   return out.slice(0, limit)
 }
+
+function rowKey(r: HistoryRow): string {
+  return `${r.timestamp}|${r.session_id}|${r.day_key}|${r.exercise_key}|${r.weight}|${r.reps}`
+}
+
+/**
+ * Fetch all set_log rows (all exercises), sorted by timestamp descending.
+ * Deduplicates by (timestamp, session_id, day_key, exercise_key, weight, reps), keeping the first.
+ */
+export async function getAllSetLogRows(
+  spreadsheetId: string,
+  limit: number = 500
+): Promise<HistoryRow[]> {
+  const sheets = getSheetsClient()
+  if (!sheets) return []
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'set_log',
+    valueRenderOption: 'UNFORMATTED_VALUE',
+  })
+  const rows = res.data.values as unknown[][] | undefined
+  if (!Array.isArray(rows) || rows.length === 0) return []
+  const first = rows[0].map((c) => String(c).toLowerCase().replace(/\s+/g, '_'))
+  const hasHeader =
+    first.includes('timestamp') && first.includes('exercise_key')
+  const header = hasHeader ? first : ['timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes']
+  const startRow = hasHeader ? 1 : 0
+  const tsIdx = header.indexOf('timestamp')
+  const sessionIdx = header.indexOf('session_id')
+  const dayIdx = header.indexOf('day_key')
+  const exIdx = header.indexOf('exercise_key')
+  const weightIdx = header.indexOf('weight')
+  const repsIdx = header.indexOf('reps')
+  const notesIdx = header.indexOf('notes')
+  const unitIdx = header.indexOf('unit')
+  if ([tsIdx, exIdx, weightIdx, repsIdx].some((i) => i === -1)) return []
+  const out: HistoryRow[] = []
+  for (let i = startRow; i < rows.length; i++) {
+    const r = rows[i] as unknown[]
+    const weight = Number(r[weightIdx])
+    const reps = Number(r[repsIdx])
+    if (!Number.isFinite(weight) || !Number.isFinite(reps)) continue
+    out.push({
+      timestamp: String(r[tsIdx] ?? ''),
+      session_id: sessionIdx >= 0 ? String(r[sessionIdx] ?? '') : '',
+      day_key: dayIdx >= 0 ? String(r[dayIdx] ?? '') : '',
+      exercise_key: String(r[exIdx] ?? ''),
+      weight,
+      reps,
+      notes: notesIdx >= 0 ? String(r[notesIdx] ?? '') : '',
+      unit: unitIdx >= 0 ? String(r[unitIdx] ?? '') : 'lb',
+    })
+  }
+  out.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+  const seen = new Set<string>()
+  const deduped: HistoryRow[] = []
+  for (const row of out) {
+    const key = rowKey(row)
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(row)
+  }
+  return deduped.slice(0, limit)
+}

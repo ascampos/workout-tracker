@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as AuthedHistoryRouteImport } from './routes/_authed/history'
 import { Route as AuthedChartsRouteImport } from './routes/_authed/charts'
 import { Route as AuthedWorkoutDayKeyRouteImport } from './routes/_authed/workout.$dayKey'
 import { Route as AuthedWorkoutDayKeyIndexRouteImport } from './routes/_authed/workout.$dayKey.index'
@@ -29,6 +30,11 @@ const AuthedRoute = AuthedRouteImport.update({
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedHistoryRoute = AuthedHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedChartsRoute = AuthedChartsRouteImport.update({
@@ -58,6 +64,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/login': typeof LoginRoute
   '/charts': typeof AuthedChartsRoute
+  '/history': typeof AuthedHistoryRoute
   '/workout/$dayKey': typeof AuthedWorkoutDayKeyRouteWithChildren
   '/workout/$dayKey/$exerciseKey': typeof AuthedWorkoutDayKeyExerciseKeyRoute
   '/workout/$dayKey/': typeof AuthedWorkoutDayKeyIndexRoute
@@ -65,6 +72,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/charts': typeof AuthedChartsRoute
+  '/history': typeof AuthedHistoryRoute
   '/': typeof AuthedIndexRoute
   '/workout/$dayKey/$exerciseKey': typeof AuthedWorkoutDayKeyExerciseKeyRoute
   '/workout/$dayKey': typeof AuthedWorkoutDayKeyIndexRoute
@@ -74,6 +82,7 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteWithChildren
   '/login': typeof LoginRoute
   '/_authed/charts': typeof AuthedChartsRoute
+  '/_authed/history': typeof AuthedHistoryRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/workout/$dayKey': typeof AuthedWorkoutDayKeyRouteWithChildren
   '/_authed/workout/$dayKey/$exerciseKey': typeof AuthedWorkoutDayKeyExerciseKeyRoute
@@ -85,6 +94,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/charts'
+    | '/history'
     | '/workout/$dayKey'
     | '/workout/$dayKey/$exerciseKey'
     | '/workout/$dayKey/'
@@ -92,6 +102,7 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/charts'
+    | '/history'
     | '/'
     | '/workout/$dayKey/$exerciseKey'
     | '/workout/$dayKey'
@@ -100,6 +111,7 @@ export interface FileRouteTypes {
     | '/_authed'
     | '/login'
     | '/_authed/charts'
+    | '/_authed/history'
     | '/_authed/'
     | '/_authed/workout/$dayKey'
     | '/_authed/workout/$dayKey/$exerciseKey'
@@ -132,6 +144,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthedIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/history': {
+      id: '/_authed/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof AuthedHistoryRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/charts': {
@@ -180,12 +199,14 @@ const AuthedWorkoutDayKeyRouteWithChildren =
 
 interface AuthedRouteChildren {
   AuthedChartsRoute: typeof AuthedChartsRoute
+  AuthedHistoryRoute: typeof AuthedHistoryRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedWorkoutDayKeyRoute: typeof AuthedWorkoutDayKeyRouteWithChildren
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedChartsRoute: AuthedChartsRoute,
+  AuthedHistoryRoute: AuthedHistoryRoute,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedWorkoutDayKeyRoute: AuthedWorkoutDayKeyRouteWithChildren,
 }

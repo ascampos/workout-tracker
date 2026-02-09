@@ -22,9 +22,14 @@ function AuthedLayout() {
   return (
     <div className="min-h-screen flex flex-col min-w-0 overflow-x-hidden">
       <header className="flex justify-between items-center p-3 border-b border-gray-800">
-        <Link to="/charts" className="text-sm text-gray-400 hover:text-white">
-          Progress
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link to="/charts" className="text-sm text-gray-400 hover:text-white">
+            Progress
+          </Link>
+          <Link to="/history" className="text-sm text-gray-400 hover:text-white">
+            History
+          </Link>
+        </div>
         <button
           type="button"
           onClick={handleLogout}
