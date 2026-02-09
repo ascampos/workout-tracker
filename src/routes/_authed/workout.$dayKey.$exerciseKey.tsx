@@ -143,6 +143,7 @@ function ExercisePage() {
     setSaving(false)
     if (result.success) {
       clearExerciseDraft(dayKey, exerciseKey)
+      setSets([])
       setSaveMessage({ type: 'ok', text: 'Saved.' })
     } else {
       setSaveMessage({ type: 'err', text: result.error ?? 'Save failed' })
