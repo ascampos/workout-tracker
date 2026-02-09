@@ -69,6 +69,8 @@ function ExercisePage() {
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [lastSet, setLastSet] = useState<{ weight: number; reps: number; notes: string } | null>(null)
+  const [heaviestSet, setHeaviestSet] = useState<{ weight: number; reps: number; daysAgo: number } | null>(null)
+  const [frequency, setFrequency] = useState<number | null>(null)
 
   useEffect(() => {
     if (!exercise) return
@@ -80,6 +82,30 @@ function ExercisePage() {
       const first = history[0]
       if (first) setLastSet({ weight: first.weight, reps: first.reps, notes: first.notes })
       else setLastSet(null)
+
+      // Calculate heaviest set
+      if (history.length > 0) {
+        const heaviest = history.reduce((max, curr) => curr.weight > max.weight ? curr : max, history[0])
+        const heaviestDate = new Date(heaviest.timestamp)
+        const now = new Date()
+        const diffMs = now.getTime() - heaviestDate.getTime()
+        const daysAgo = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+        setHeaviestSet({ weight: heaviest.weight, reps: heaviest.reps, daysAgo })
+      } else {
+        setHeaviestSet(null)
+      }
+
+      // Calculate frequency (last 30 days)
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      const recentSessions = new Set<string>()
+      for (const entry of history) {
+        const entryDate = new Date(entry.timestamp)
+        if (entryDate >= thirtyDaysAgo) {
+          recentSessions.add(entry.session_id)
+        }
+      }
+      setFrequency(recentSessions.size)
     })
   }, [exerciseKey])
 
@@ -163,6 +189,41 @@ function ExercisePage() {
         </Link>
         <h1 className="text-xl font-bold truncate min-w-0">{exercise.exercise_name}</h1>
       </div>
+
+      {/* Stats section */}
+      {(heaviestSet != null || frequency != null) && (
+        <div className="mb-6 grid grid-cols-2 gap-4">
+          {/* Heaviest set */}
+          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+            <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">Heaviest Set</div>
+            {heaviestSet ? (
+              <>
+                <div className="text-3xl font-bold text-white mb-1">
+                  {heaviestSet.weight} <span className="text-lg text-gray-400">{unit}</span>
+                </div>
+                <div className="text-sm text-gray-400">
+                  {heaviestSet.reps} reps · {heaviestSet.daysAgo === 0 ? 'today' : `${heaviestSet.daysAgo} day${heaviestSet.daysAgo === 1 ? '' : 's'} ago`}
+                </div>
+              </>
+            ) : (
+              <div className="text-gray-500">No data</div>
+            )}
+          </div>
+
+          {/* Frequency */}
+          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+            <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">Frequency</div>
+            {frequency != null ? (
+              <>
+                <div className="text-3xl font-bold text-white mb-1">{frequency}</div>
+                <div className="text-sm text-gray-400">sessions in 30 days</div>
+              </>
+            ) : (
+              <div className="text-gray-500">No data</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {lastSet != null && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
