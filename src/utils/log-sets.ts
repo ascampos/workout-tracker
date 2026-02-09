@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { useAppSession } from '@/utils/session'
-import { appendSetLogRows, getSetLogHistory, getAllSetLogRows } from '@/utils/sheets'
+import { appendSetLogRows, getSetLogHistory, getAllSetLogRows, updateSetLogById, deleteSetLogById } from '@/utils/sheets'
 import { workoutTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
 
@@ -68,7 +68,7 @@ export const logSetsFn = createServerFn({ method: 'POST' })
     return { success: true as const }
   })
 
-export type HistoryEntry = { timestamp: string; session_id: string; weight: number; reps: number; notes: string }
+export type HistoryEntry = { id: string; timestamp: string; session_id: string; weight: number; reps: number; notes: string }
 
 export const getHistoryFn = createServerFn({ method: 'GET' })
   .inputValidator((d: { exerciseKey: string }) => d)
@@ -78,7 +78,7 @@ export const getHistoryFn = createServerFn({ method: 'GET' })
     const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID
     if (!spreadsheetId || !data?.exerciseKey) return []
     const rows = await getSetLogHistory(spreadsheetId, data.exerciseKey, 50)
-    return rows.map((r): HistoryEntry => ({ timestamp: r.timestamp, session_id: r.session_id, weight: r.weight, reps: r.reps, notes: r.notes }))
+    return rows.map((r): HistoryEntry => ({ id: r.id, timestamp: r.timestamp, session_id: r.session_id, weight: r.weight, reps: r.reps, notes: r.notes }))
   })
 
 const exerciseKeyToName = (() => {
@@ -91,7 +91,7 @@ const exerciseKeyToName = (() => {
   return m
 })()
 
-export type SessionSet = { weight: number; reps: number; notes: string; unit: string }
+export type SessionSet = { id: string; weight: number; reps: number; notes: string; unit: string }
 export type SessionExercise = { exercise_key: string; exercise_name: string; sets: SessionSet[] }
 export type SessionSummary = {
   session_id: string
@@ -121,16 +121,20 @@ export const getSessionHistoryFn = createServerFn({ method: 'GET' })
     }
     const sessions: SessionSummary[] = []
     for (const [sessionId, sessionRows] of bySession.entries()) {
-      const byExercise = new Map<string, SessionSet[]>()
+      const byExercise = new Map<string, (SessionSet & { timestamp: string })[]>()
       const started_at = sessionRows[0]?.timestamp ?? ''
       for (const r of sessionRows) {
         const sets = byExercise.get(r.exercise_key) ?? []
-        sets.push({ weight: r.weight, reps: r.reps, notes: r.notes, unit: r.unit || 'lb' })
+        sets.push({ id: r.id, weight: r.weight, reps: r.reps, notes: r.notes, unit: r.unit || 'lb', timestamp: r.timestamp })
         byExercise.set(r.exercise_key, sets)
       }
       const day_key = sessionRows[0]?.day_key ?? ''
       const exercises: SessionExercise[] = []
-      for (const [exKey, sets] of byExercise.entries()) {
+      for (const [exKey, setsWithTimestamp] of byExercise.entries()) {
+        // Sort sets by timestamp (oldest first - chronological order)
+        const sortedSets = setsWithTimestamp.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+        // Remove timestamp from the sets before returning
+        const sets: SessionSet[] = sortedSets.map(({ timestamp, ...set }) => set)
         exercises.push({
           exercise_key: exKey,
           exercise_name: exerciseKeyToName.get(exKey) ?? exKey.replace(/_/g, ' '),
@@ -147,4 +151,89 @@ export const getSessionHistoryFn = createServerFn({ method: 'GET' })
     }
     sessions.sort((a, b) => b.started_at.localeCompare(a.started_at))
     return { sessions }
+  })
+
+export type UpdateSetPayload = {
+  id: string
+  weight?: number
+  reps?: number
+  notes?: string
+}
+
+export const updateSetFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: UpdateSetPayload) => d)
+  .handler(async ({ data }) => {
+    const session = await useAppSession()
+    if (!session.data.authenticated) {
+      return { success: false as const, error: 'Not authenticated' }
+    }
+
+    if (!data.id || typeof data.id !== 'string') {
+      return { success: false as const, error: 'Missing id' }
+    }
+
+    // Validate that at least one field is being updated
+    if (data.weight === undefined && data.reps === undefined && data.notes === undefined) {
+      return { success: false as const, error: 'No fields to update' }
+    }
+
+    // Validate numbers if provided
+    if (data.weight !== undefined && (!Number.isFinite(data.weight) || data.weight < 0)) {
+      return { success: false as const, error: 'Invalid weight' }
+    }
+    if (data.reps !== undefined && (!Number.isFinite(data.reps) || data.reps < 0)) {
+      return { success: false as const, error: 'Invalid reps' }
+    }
+
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID
+    if (!spreadsheetId) {
+      return { success: false as const, error: 'Spreadsheet not configured' }
+    }
+
+    try {
+      const updates: Partial<Pick<import('@/utils/sheets').HistoryRow, 'weight' | 'reps' | 'notes'>> = {}
+      if (data.weight !== undefined) updates.weight = data.weight
+      if (data.reps !== undefined) updates.reps = data.reps
+      if (data.notes !== undefined) updates.notes = data.notes
+
+      await updateSetLogById(spreadsheetId, data.id, updates)
+      return { success: true as const }
+    } catch (err) {
+      return {
+        success: false as const,
+        error: err instanceof Error ? err.message : 'Failed to update set',
+      }
+    }
+  })
+
+export type DeleteSetPayload = {
+  id: string
+}
+
+export const deleteSetFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: DeleteSetPayload) => d)
+  .handler(async ({ data }) => {
+    const session = await useAppSession()
+    if (!session.data.authenticated) {
+      return { success: false as const, error: 'Not authenticated' }
+    }
+
+    if (!data.id || typeof data.id !== 'string') {
+      return { success: false as const, error: 'Missing id' }
+    }
+
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID
+    if (!spreadsheetId) {
+      return { success: false as const, error: 'Spreadsheet not configured' }
+    }
+
+    try {
+      await deleteSetLogById(spreadsheetId, data.id)
+      return { success: true as const }
+    } catch (err) {
+      return {
+        success: false as const,
+        error: err instanceof Error ? err.message : 'Failed to delete set',
+      }
+    }
   })

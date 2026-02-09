@@ -6,14 +6,16 @@
     "dev": "vite dev --port 3000",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "migrate:add-ids": "tsx scripts/add-id-column.ts"
   },
   "dependencies": {
-    "googleapis": "^144.0.0",
-    "nitro": "^3.0.1-alpha.2",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-router": "^1.132.0",
     "@tanstack/react-start": "^1.132.0",
+    "googleapis": "^144.0.0",
+    "nanoid": "^5.1.6",
+    "nitro": "^3.0.1-alpha.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwindcss": "^4.1.18",
@@ -26,7 +28,9 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "dotenv": "^17.2.4",
     "jsdom": "^27.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.2",
     "vite": "^7.1.7",
     "vitest": "^3.0.5"

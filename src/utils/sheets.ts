@@ -6,8 +6,10 @@
 import { google } from 'googleapis'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { nanoid } from 'nanoid'
 
 type SetLogRow = {
+  id?: string  // optional for backward compatibility during migration
   timestamp: string
   session_id: string
   day_key: string
@@ -81,31 +83,39 @@ function getSheetsClient(): ReturnType<typeof google.sheets> | null {
 export async function appendSetLogRows(
   spreadsheetId: string,
   rows: SetLogRow[]
-): Promise<void> {
+): Promise<string[]> {
   const sheets = getSheetsClient()
   if (!sheets) {
     const result = loadServiceAccountCredentials()
     throw new Error('error' in result ? result.error : 'Google credentials not loaded.')
   }
-  const values = rows.map((r) => [
-    r.timestamp,
-    r.session_id,
-    r.day_key,
-    r.exercise_key,
-    r.unit,
-    r.weight,
-    r.reps,
-    r.notes ?? '',
-  ])
+  const ids: string[] = []
+  const values = rows.map((r) => {
+    const id = r.id ?? nanoid()
+    ids.push(id)
+    return [
+      id,           // id is now the first column
+      r.timestamp,
+      r.session_id,
+      r.day_key,
+      r.exercise_key,
+      r.unit,
+      r.weight,
+      r.reps,
+      r.notes ?? '',
+    ]
+  })
   await sheets.spreadsheets.values.append({
     spreadsheetId,
     range: 'set_log',
     valueInputOption: 'USER_ENTERED',
     requestBody: { values },
   })
+  return ids
 }
 
 export type HistoryRow = {
+  id: string
   timestamp: string
   session_id: string
   day_key: string
@@ -133,8 +143,9 @@ export async function getSetLogHistory(
   const first = rows[0].map((c) => String(c).toLowerCase().replace(/\s+/g, '_'))
   const hasHeader =
     first.includes('timestamp') && first.includes('exercise_key')
-  const header = hasHeader ? first : ['timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes']
+  const header = hasHeader ? first : ['id', 'timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes']
   const startRow = hasHeader ? 1 : 0
+  const idIdx = header.indexOf('id')
   const tsIdx = header.indexOf('timestamp')
   const sessionIdx = header.indexOf('session_id')
   const dayIdx = header.indexOf('day_key')
@@ -143,7 +154,7 @@ export async function getSetLogHistory(
   const repsIdx = header.indexOf('reps')
   const notesIdx = header.indexOf('notes')
   const unitIdx = header.indexOf('unit')
-  if ([tsIdx, exIdx, weightIdx, repsIdx].some((i) => i === -1)) return []
+  if ([idIdx, tsIdx, exIdx, weightIdx, repsIdx].some((i) => i === -1)) return []
   const out: HistoryRow[] = []
   for (let i = startRow; i < rows.length; i++) {
     const r = rows[i] as unknown[]
@@ -152,6 +163,7 @@ export async function getSetLogHistory(
     const reps = Number(r[repsIdx])
     if (!Number.isFinite(weight) || !Number.isFinite(reps)) continue
     out.push({
+      id: String(r[idIdx] ?? ''),
       timestamp: String(r[tsIdx] ?? ''),
       session_id: sessionIdx >= 0 ? String(r[sessionIdx] ?? '') : '',
       day_key: dayIdx >= 0 ? String(r[dayIdx] ?? '') : '',
@@ -190,8 +202,9 @@ export async function getAllSetLogRows(
   const first = rows[0].map((c) => String(c).toLowerCase().replace(/\s+/g, '_'))
   const hasHeader =
     first.includes('timestamp') && first.includes('exercise_key')
-  const header = hasHeader ? first : ['timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes']
+  const header = hasHeader ? first : ['id', 'timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes']
   const startRow = hasHeader ? 1 : 0
+  const idIdx = header.indexOf('id')
   const tsIdx = header.indexOf('timestamp')
   const sessionIdx = header.indexOf('session_id')
   const dayIdx = header.indexOf('day_key')
@@ -200,7 +213,7 @@ export async function getAllSetLogRows(
   const repsIdx = header.indexOf('reps')
   const notesIdx = header.indexOf('notes')
   const unitIdx = header.indexOf('unit')
-  if ([tsIdx, exIdx, weightIdx, repsIdx].some((i) => i === -1)) return []
+  if ([idIdx, tsIdx, exIdx, weightIdx, repsIdx].some((i) => i === -1)) return []
   const out: HistoryRow[] = []
   for (let i = startRow; i < rows.length; i++) {
     const r = rows[i] as unknown[]
@@ -208,6 +221,7 @@ export async function getAllSetLogRows(
     const reps = Number(r[repsIdx])
     if (!Number.isFinite(weight) || !Number.isFinite(reps)) continue
     out.push({
+      id: String(r[idIdx] ?? ''),
       timestamp: String(r[tsIdx] ?? ''),
       session_id: sessionIdx >= 0 ? String(r[sessionIdx] ?? '') : '',
       day_key: dayIdx >= 0 ? String(r[dayIdx] ?? '') : '',
@@ -228,4 +242,132 @@ export async function getAllSetLogRows(
     deduped.push(row)
   }
   return deduped.slice(0, limit)
+}
+
+/**
+ * Find the row index (1-based) of a set by its ID.
+ * Returns null if not found.
+ */
+async function findRowIndexById(
+  spreadsheetId: string,
+  id: string
+): Promise<number | null> {
+  const sheets = getSheetsClient()
+  if (!sheets) return null
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'set_log!A:A',  // Only read the ID column
+    valueRenderOption: 'UNFORMATTED_VALUE',
+  })
+
+  const rows = res.data.values as unknown[][] | undefined
+  if (!Array.isArray(rows) || rows.length === 0) return null
+
+  // Find the row with matching ID (skip header row)
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === id) {
+      return i + 1  // Convert to 1-based row number
+    }
+  }
+
+  return null
+}
+
+/**
+ * Update a single set by ID. Only weight, reps, and notes can be updated.
+ */
+export async function updateSetLogById(
+  spreadsheetId: string,
+  id: string,
+  updates: Partial<Pick<HistoryRow, 'weight' | 'reps' | 'notes'>>
+): Promise<void> {
+  const sheets = getSheetsClient()
+  if (!sheets) {
+    const result = loadServiceAccountCredentials()
+    throw new Error('error' in result ? result.error : 'Google credentials not loaded.')
+  }
+
+  const rowIndex = await findRowIndexById(spreadsheetId, id)
+  if (!rowIndex) {
+    throw new Error(`Set with id ${id} not found`)
+  }
+
+  if (rowIndex < 2) {
+    throw new Error('Cannot update header row')
+  }
+
+  // Read current row to merge updates
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `set_log!A${rowIndex}:I${rowIndex}`,
+    valueRenderOption: 'UNFORMATTED_VALUE',
+  })
+
+  const currentRow = response.data.values?.[0]
+  if (!currentRow || currentRow.length < 9) {
+    throw new Error('Row not found or invalid')
+  }
+
+  // Current structure: [id, timestamp, session_id, day_key, exercise_key, unit, weight, reps, notes]
+  const [rowId, timestamp, session_id, day_key, exercise_key, unit, weight, reps, notes] = currentRow
+
+  // Build updated row (only allow changing weight, reps, notes)
+  const updatedRow = [
+    rowId,           // unchanged
+    timestamp,       // unchanged
+    session_id,      // unchanged
+    day_key,         // unchanged
+    exercise_key,    // unchanged
+    unit,            // unchanged
+    updates.weight !== undefined ? updates.weight : weight,
+    updates.reps !== undefined ? updates.reps : reps,
+    updates.notes !== undefined ? updates.notes : notes,
+  ]
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `set_log!A${rowIndex}:I${rowIndex}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [updatedRow] }
+  })
+}
+
+/**
+ * Delete a single set by ID.
+ */
+export async function deleteSetLogById(
+  spreadsheetId: string,
+  id: string
+): Promise<void> {
+  const sheets = getSheetsClient()
+  if (!sheets) {
+    const result = loadServiceAccountCredentials()
+    throw new Error('error' in result ? result.error : 'Google credentials not loaded.')
+  }
+
+  const rowIndex = await findRowIndexById(spreadsheetId, id)
+  if (!rowIndex) {
+    throw new Error(`Set with id ${id} not found`)
+  }
+
+  if (rowIndex < 2) {
+    throw new Error('Cannot delete header row')
+  }
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        deleteDimension: {
+          range: {
+            sheetId: 0,  // Assumes set_log is the first sheet
+            dimension: 'ROWS',
+            startIndex: rowIndex - 1,  // 0-based for API
+            endIndex: rowIndex
+          }
+        }
+      }]
+    }
+  })
 }
