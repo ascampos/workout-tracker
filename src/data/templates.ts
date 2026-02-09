@@ -123,3 +123,23 @@ export const workoutTemplates: Record<WorkoutDayKey, WorkoutTemplate> = {
     ],
   },
 }
+
+// Get all unique exercises across all workout templates
+export function getAllExercises(): Array<{
+  exercise_key: string
+  exercise_name: string
+}> {
+  const exerciseMap = new Map<string, string>()
+
+  Object.values(workoutTemplates).forEach((template) => {
+    template.exercises.forEach((ex) => {
+      if (!exerciseMap.has(ex.exercise_key)) {
+        exerciseMap.set(ex.exercise_key, ex.exercise_name)
+      }
+    })
+  })
+
+  return Array.from(exerciseMap.entries())
+    .map(([exercise_key, exercise_name]) => ({ exercise_key, exercise_name }))
+    .sort((a, b) => a.exercise_name.localeCompare(b.exercise_name))
+}
