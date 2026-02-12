@@ -97,6 +97,7 @@ export const workoutTemplates: Record<WorkoutDayKey, WorkoutTemplate> = {
       { exercise_key: 'straight_bar_curl', exercise_name: 'Straight Bar Curl' },
       { exercise_key: 'bicycle_kicks', exercise_name: 'Bicycle Kicks' },
       { exercise_key: 'dead_bugs', exercise_name: 'Dead Bugs' },
+      { exercise_key: 'lateral_raise', exercise_name: 'Lateral Raise' },
       { exercise_key: 'cable_crunches', exercise_name: 'Cable Crunches' },
     ],
   },

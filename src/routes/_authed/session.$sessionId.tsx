@@ -3,36 +3,40 @@ import { useState, useEffect } from 'react'
 import { getSessionHistoryFn, updateSetFn, deleteSetFn, type SessionSummary, type SessionSet } from '@/utils/log-sets'
 import { SessionCard, EditSetModal } from '@/components/session-card'
 
-export const Route = createFileRoute('/_authed/history')({
-  component: HistoryPage,
+export const Route = createFileRoute('/_authed/session/$sessionId')({
+  component: SessionDetailPage,
 })
 
-function HistoryPage() {
-  const [sessions, setSessions] = useState<SessionSummary[]>([])
+function SessionDetailPage() {
+  const { sessionId } = Route.useParams()
+  const [session, setSession] = useState<SessionSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editingSet, setEditingSet] = useState<SessionSet | null>(null)
   const [operatingSetId, setOperatingSetId] = useState<string | null>(null)
 
-  const fetchSessions = () => {
+  const fetchSession = () => {
     setLoading(true)
     setError(null)
     getSessionHistoryFn()
-      .then(({ sessions: list }) => setSessions(list))
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load history'))
+      .then(({ sessions: list }) => {
+        const found = list.find((s) => s.session_id === sessionId) ?? null
+        setSession(found)
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load session'))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
-    fetchSessions()
-  }, [])
+    fetchSession()
+  }, [sessionId])
 
   const handleSaveSet = async (id: string, weight: number, reps: number, notes: string) => {
     setOperatingSetId(id)
     try {
       const result = await updateSetFn({ data: { id, weight, reps, notes } })
       if (result.success) {
-        await fetchSessions()
+        await fetchSession()
       } else {
         throw new Error(result.error)
       }
@@ -51,7 +55,7 @@ function HistoryPage() {
     try {
       const result = await deleteSetFn({ data: { id: set.id } })
       if (result.success) {
-        await fetchSessions()
+        await fetchSession()
       } else {
         throw new Error(result.error)
       }
@@ -72,34 +76,29 @@ function HistoryPage() {
         >
           ←
         </Link>
-        <h1 className="text-2xl font-bold">Workout History</h1>
+        <h1 className="text-2xl font-bold">Session</h1>
       </div>
 
       {loading && (
-        <p className="text-gray-400 py-8 text-center">Loading sessions…</p>
+        <p className="text-gray-400 py-8 text-center">Loading session…</p>
       )}
       {error && (
         <p className="text-red-400 py-4 text-center" role="alert">
           {error}
         </p>
       )}
-      {!loading && !error && sessions.length === 0 && (
+      {!loading && !error && !session && (
         <p className="text-gray-400 py-8 text-center">
-          No sessions yet. Log some sets from a workout to see them here.
+          Session not found.
         </p>
       )}
-      {!loading && !error && sessions.length > 0 && (
-        <div className="space-y-4">
-          {sessions.map((session) => (
-            <SessionCard
-              key={session.session_id}
-              session={session}
-              onEditSet={setEditingSet}
-              onDeleteSet={handleDeleteSet}
-              operatingSetId={operatingSetId}
-            />
-          ))}
-        </div>
+      {!loading && !error && session && (
+        <SessionCard
+          session={session}
+          onEditSet={setEditingSet}
+          onDeleteSet={handleDeleteSet}
+          operatingSetId={operatingSetId}
+        />
       )}
 
       {editingSet && (

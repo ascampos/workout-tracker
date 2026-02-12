@@ -15,6 +15,7 @@ import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedHistoryRouteImport } from './routes/_authed/history'
 import { Route as AuthedChartsRouteImport } from './routes/_authed/charts'
 import { Route as AuthedWorkoutDayKeyRouteImport } from './routes/_authed/workout.$dayKey'
+import { Route as AuthedSessionSessionIdRouteImport } from './routes/_authed/session.$sessionId'
 import { Route as AuthedWorkoutDayKeyIndexRouteImport } from './routes/_authed/workout.$dayKey.index'
 import { Route as AuthedWorkoutDayKeyExerciseKeyRouteImport } from './routes/_authed/workout.$dayKey.$exerciseKey'
 
@@ -47,6 +48,11 @@ const AuthedWorkoutDayKeyRoute = AuthedWorkoutDayKeyRouteImport.update({
   path: '/workout/$dayKey',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedSessionSessionIdRoute = AuthedSessionSessionIdRouteImport.update({
+  id: '/session/$sessionId',
+  path: '/session/$sessionId',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedWorkoutDayKeyIndexRoute =
   AuthedWorkoutDayKeyIndexRouteImport.update({
     id: '/',
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/charts': typeof AuthedChartsRoute
   '/history': typeof AuthedHistoryRoute
+  '/session/$sessionId': typeof AuthedSessionSessionIdRoute
   '/workout/$dayKey': typeof AuthedWorkoutDayKeyRouteWithChildren
   '/workout/$dayKey/$exerciseKey': typeof AuthedWorkoutDayKeyExerciseKeyRoute
   '/workout/$dayKey/': typeof AuthedWorkoutDayKeyIndexRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/charts': typeof AuthedChartsRoute
   '/history': typeof AuthedHistoryRoute
   '/': typeof AuthedIndexRoute
+  '/session/$sessionId': typeof AuthedSessionSessionIdRoute
   '/workout/$dayKey/$exerciseKey': typeof AuthedWorkoutDayKeyExerciseKeyRoute
   '/workout/$dayKey': typeof AuthedWorkoutDayKeyIndexRoute
 }
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   '/_authed/charts': typeof AuthedChartsRoute
   '/_authed/history': typeof AuthedHistoryRoute
   '/_authed/': typeof AuthedIndexRoute
+  '/_authed/session/$sessionId': typeof AuthedSessionSessionIdRoute
   '/_authed/workout/$dayKey': typeof AuthedWorkoutDayKeyRouteWithChildren
   '/_authed/workout/$dayKey/$exerciseKey': typeof AuthedWorkoutDayKeyExerciseKeyRoute
   '/_authed/workout/$dayKey/': typeof AuthedWorkoutDayKeyIndexRoute
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/charts'
     | '/history'
+    | '/session/$sessionId'
     | '/workout/$dayKey'
     | '/workout/$dayKey/$exerciseKey'
     | '/workout/$dayKey/'
@@ -104,6 +114,7 @@ export interface FileRouteTypes {
     | '/charts'
     | '/history'
     | '/'
+    | '/session/$sessionId'
     | '/workout/$dayKey/$exerciseKey'
     | '/workout/$dayKey'
   id:
@@ -113,6 +124,7 @@ export interface FileRouteTypes {
     | '/_authed/charts'
     | '/_authed/history'
     | '/_authed/'
+    | '/_authed/session/$sessionId'
     | '/_authed/workout/$dayKey'
     | '/_authed/workout/$dayKey/$exerciseKey'
     | '/_authed/workout/$dayKey/'
@@ -167,6 +179,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkoutDayKeyRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/session/$sessionId': {
+      id: '/_authed/session/$sessionId'
+      path: '/session/$sessionId'
+      fullPath: '/session/$sessionId'
+      preLoaderRoute: typeof AuthedSessionSessionIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/workout/$dayKey/': {
       id: '/_authed/workout/$dayKey/'
       path: '/'
@@ -201,6 +220,7 @@ interface AuthedRouteChildren {
   AuthedChartsRoute: typeof AuthedChartsRoute
   AuthedHistoryRoute: typeof AuthedHistoryRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
+  AuthedSessionSessionIdRoute: typeof AuthedSessionSessionIdRoute
   AuthedWorkoutDayKeyRoute: typeof AuthedWorkoutDayKeyRouteWithChildren
 }
 
@@ -208,6 +228,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedChartsRoute: AuthedChartsRoute,
   AuthedHistoryRoute: AuthedHistoryRoute,
   AuthedIndexRoute: AuthedIndexRoute,
+  AuthedSessionSessionIdRoute: AuthedSessionSessionIdRoute,
   AuthedWorkoutDayKeyRoute: AuthedWorkoutDayKeyRouteWithChildren,
 }
 

@@ -68,7 +68,7 @@ export const logSetsFn = createServerFn({ method: 'POST' })
     return { success: true as const }
   })
 
-export type HistoryEntry = { id: string; timestamp: string; session_id: string; weight: number; reps: number; notes: string }
+export type HistoryEntry = { id: string; timestamp: string; session_id: string; weight: number; reps: number; notes: string; updated_at?: string }
 
 export const getHistoryFn = createServerFn({ method: 'GET' })
   .inputValidator((d: { exerciseKey: string }) => d)
@@ -78,7 +78,7 @@ export const getHistoryFn = createServerFn({ method: 'GET' })
     const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID
     if (!spreadsheetId || !data?.exerciseKey) return []
     const rows = await getSetLogHistory(spreadsheetId, data.exerciseKey, 50)
-    return rows.map((r): HistoryEntry => ({ id: r.id, timestamp: r.timestamp, session_id: r.session_id, weight: r.weight, reps: r.reps, notes: r.notes }))
+    return rows.map((r): HistoryEntry => ({ id: r.id, timestamp: r.timestamp, session_id: r.session_id, weight: r.weight, reps: r.reps, notes: r.notes, updated_at: r.updated_at }))
   })
 
 const exerciseKeyToName = (() => {
@@ -91,7 +91,7 @@ const exerciseKeyToName = (() => {
   return m
 })()
 
-export type SessionSet = { id: string; weight: number; reps: number; notes: string; unit: string; timestamp: string }
+export type SessionSet = { id: string; weight: number; reps: number; notes: string; unit: string; timestamp: string; updated_at?: string }
 export type SessionExercise = { exercise_key: string; exercise_name: string; sets: SessionSet[] }
 export type SessionSummary = {
   session_id: string
@@ -131,7 +131,8 @@ export const getSessionHistoryFn = createServerFn({ method: 'GET' })
           reps: r.reps,
           notes: r.notes,
           unit: r.unit || 'lb',
-          timestamp: r.timestamp
+          timestamp: r.timestamp,
+          updated_at: r.updated_at,
         }
         sets.push(newSet)
         byExercise.set(r.exercise_key, sets)

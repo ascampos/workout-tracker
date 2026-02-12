@@ -18,6 +18,7 @@ type SetLogRow = {
   reps: number
   notes: string
   unit: string
+  updated_at?: string  // when the set was last edited; never overwrite timestamp
 }
 
 function loadServiceAccountCredentials(): { credentials: object } | { error: string } {
@@ -103,6 +104,7 @@ export async function appendSetLogRows(
       r.weight,
       r.reps,
       r.notes ?? '',
+      r.updated_at ?? '',  // empty = never updated; only set when editing
     ]
   })
   await sheets.spreadsheets.values.append({
@@ -124,6 +126,7 @@ export type HistoryRow = {
   reps: number
   notes: string
   unit: string
+  updated_at?: string  // when the set was last edited; original log time stays in timestamp
 }
 
 export async function getSetLogHistory(
@@ -143,7 +146,7 @@ export async function getSetLogHistory(
   const first = rows[0].map((c) => String(c).toLowerCase().replace(/\s+/g, '_'))
   const hasHeader =
     first.includes('timestamp') && first.includes('exercise_key')
-  const header = hasHeader ? first : ['id', 'timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes']
+  const header = hasHeader ? first : ['id', 'timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes', 'updated_at']
   const startRow = hasHeader ? 1 : 0
   const idIdx = header.indexOf('id')
   const tsIdx = header.indexOf('timestamp')
@@ -154,6 +157,7 @@ export async function getSetLogHistory(
   const repsIdx = header.indexOf('reps')
   const notesIdx = header.indexOf('notes')
   const unitIdx = header.indexOf('unit')
+  const updatedAtIdx = header.indexOf('updated_at')
   if ([idIdx, tsIdx, exIdx, weightIdx, repsIdx].some((i) => i === -1)) return []
   const out: HistoryRow[] = []
   for (let i = startRow; i < rows.length; i++) {
@@ -172,6 +176,7 @@ export async function getSetLogHistory(
       reps,
       notes: notesIdx >= 0 ? String(r[notesIdx] ?? '') : '',
       unit: unitIdx >= 0 ? String(r[unitIdx] ?? '') : 'lb',
+      updated_at: (updatedAtIdx >= 0 && r[updatedAtIdx] != null ? String(r[updatedAtIdx]) : (r.length >= 10 && r[9] != null ? String(r[9]) : undefined)) || undefined,
     })
   }
   out.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
@@ -202,7 +207,7 @@ export async function getAllSetLogRows(
   const first = rows[0].map((c) => String(c).toLowerCase().replace(/\s+/g, '_'))
   const hasHeader =
     first.includes('timestamp') && first.includes('exercise_key')
-  const header = hasHeader ? first : ['id', 'timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes']
+  const header = hasHeader ? first : ['id', 'timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes', 'updated_at']
   const startRow = hasHeader ? 1 : 0
   const idIdx = header.indexOf('id')
   const tsIdx = header.indexOf('timestamp')
@@ -213,6 +218,7 @@ export async function getAllSetLogRows(
   const repsIdx = header.indexOf('reps')
   const notesIdx = header.indexOf('notes')
   const unitIdx = header.indexOf('unit')
+  const updatedAtIdx = header.indexOf('updated_at')
   if ([idIdx, tsIdx, exIdx, weightIdx, repsIdx].some((i) => i === -1)) return []
   const out: HistoryRow[] = []
   for (let i = startRow; i < rows.length; i++) {
@@ -230,6 +236,7 @@ export async function getAllSetLogRows(
       reps,
       notes: notesIdx >= 0 ? String(r[notesIdx] ?? '') : '',
       unit: unitIdx >= 0 ? String(r[unitIdx] ?? '') : 'lb',
+      updated_at: (updatedAtIdx >= 0 && r[updatedAtIdx] != null ? String(r[updatedAtIdx]) : (r.length >= 10 && r[9] != null ? String(r[9]) : undefined)) || undefined,
     })
   }
   out.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
@@ -297,37 +304,48 @@ export async function updateSetLogById(
     throw new Error('Cannot update header row')
   }
 
-  // Read current row to merge updates
+  // Read current row to merge updates (A:J to support optional updated_at)
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `set_log!A${rowIndex}:I${rowIndex}`,
+    range: `set_log!A${rowIndex}:J${rowIndex}`,
     valueRenderOption: 'UNFORMATTED_VALUE',
   })
 
-  const currentRow = response.data.values?.[0]
+  const currentRow = response.data.values?.[0] as unknown[] | undefined
   if (!currentRow || currentRow.length < 9) {
     throw new Error('Row not found or invalid')
   }
 
-  // Current structure: [id, timestamp, session_id, day_key, exercise_key, unit, weight, reps, notes]
-  const [rowId, timestamp, session_id, day_key, exercise_key, unit, weight, reps, notes] = currentRow
+  // Structure: [id, timestamp, session_id, day_key, exercise_key, unit, weight, reps, notes, updated_at?]
+  const rowId = currentRow[0]
+  const timestamp = currentRow[1]  // never overwrite – original log time
+  const session_id = currentRow[2]
+  const day_key = currentRow[3]
+  const exercise_key = currentRow[4]
+  const unit = currentRow[5]
+  const weight = currentRow[6]
+  const reps = currentRow[7]
+  const notes = currentRow[8]
 
-  // Build updated row (only allow changing weight, reps, notes)
+  const updatedAt = new Date().toISOString()
+
+  // Build updated row: only weight, reps, notes change; set updated_at on every edit
   const updatedRow = [
-    rowId,           // unchanged
-    timestamp,       // unchanged
-    session_id,      // unchanged
-    day_key,         // unchanged
-    exercise_key,    // unchanged
-    unit,            // unchanged
+    rowId,
+    timestamp,
+    session_id,
+    day_key,
+    exercise_key,
+    unit,
     updates.weight !== undefined ? updates.weight : weight,
     updates.reps !== undefined ? updates.reps : reps,
     updates.notes !== undefined ? updates.notes : notes,
+    updatedAt,
   ]
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `set_log!A${rowIndex}:I${rowIndex}`,
+    range: `set_log!A${rowIndex}:J${rowIndex}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [updatedRow] }
   })

@@ -23,18 +23,12 @@ export const Route = createFileRoute('/_authed/workout/$dayKey/$exerciseKey')({
 type SetInput = { weight: string; reps: string; notes: string }
 
 const unit = 'lb'
-const SESSION_KEY_PREFIX = 'workout-session-'
 const DRAFT_KEY_PREFIX = 'workout-draft-'
 
+/** One session per calendar day per day_key so different days don't share a session_id. */
 function getSessionIdForDay(dayKey: string): string {
-  if (typeof window === 'undefined') return crypto.randomUUID()
-  const key = SESSION_KEY_PREFIX + dayKey
-  let id = sessionStorage.getItem(key)
-  if (!id) {
-    id = crypto.randomUUID()
-    sessionStorage.setItem(key, id)
-  }
-  return id
+  const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+  return `${today}-${dayKey}`
 }
 
 function readExerciseDraft(dayKey: string, exerciseKey: string): SetInput[] | null {
