@@ -2,7 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
 import { workoutTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
-import { logSetsFn, getHistoryFn } from '@/utils/log-sets'
+import { logSetsFn, getHistoryFn, type HistoryEntry } from '@/utils/log-sets'
 
 // Standard gym weight increments (in lb)
 const WEIGHT_PRESETS = [
@@ -193,6 +193,7 @@ function ExercisePage() {
   const [heaviestSet, setHeaviestSet] = useState<{ weight: number; reps: number; daysAgo: number } | null>(null)
   const [frequency, setFrequency] = useState<number | null>(null)
   const [modalState, setModalState] = useState<ModalState>(null)
+  const [lastWorkout, setLastWorkout] = useState<{ date: string; sets: HistoryEntry[] } | null>(null)
 
   useEffect(() => {
     if (!exercise) return
@@ -207,7 +208,10 @@ function ExercisePage() {
 
       // Calculate heaviest set
       if (history.length > 0) {
-        const heaviest = history.reduce((max, curr) => curr.weight > max.weight ? curr : max, history[0])
+        const heaviest = history.reduce(
+          (max, curr) => (curr.weight > max.weight ? curr : max),
+          history[0]
+        )
         const heaviestDate = new Date(heaviest.timestamp)
         const now = new Date()
         const diffMs = now.getTime() - heaviestDate.getTime()
@@ -228,8 +232,56 @@ function ExercisePage() {
         }
       }
       setFrequency(recentSessions.size)
+
+      // Find the most recent prior workout session for this exercise
+      if (history.length === 0) {
+        setLastWorkout(null)
+        return
+      }
+
+      const bySession = new Map<string, HistoryEntry[]>()
+      for (const entry of history) {
+        const list = bySession.get(entry.session_id) ?? []
+        list.push(entry)
+        bySession.set(entry.session_id, list)
+      }
+
+      const sessionGroups = Array.from(bySession.values()).sort((a, b) => {
+        const aTime = a[0]?.timestamp ?? ''
+        const bTime = b[0]?.timestamp ?? ''
+        return bTime.localeCompare(aTime)
+      })
+
+      let chosen: HistoryEntry[] | null = null
+      for (const group of sessionGroups) {
+        if (group[0] && group[0].session_id !== sessionId) {
+          chosen = group
+          break
+        }
+      }
+
+      if (!chosen && sessionGroups[0]) {
+        chosen = sessionGroups[0]
+      }
+
+      if (!chosen || chosen.length === 0) {
+        setLastWorkout(null)
+        return
+      }
+
+      // Sort sets chronologically within the chosen session
+      const sortedSets = [...chosen].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+      const firstTimestamp = sortedSets[0].timestamp
+      const firstDate = new Date(firstTimestamp)
+      const dateLabel = firstDate.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+
+      setLastWorkout({ date: dateLabel, sets: sortedSets })
     })
-  }, [exerciseKey])
+  }, [exerciseKey, sessionId])
 
   function copyLastSet() {
     if (!lastSet) return
@@ -439,6 +491,31 @@ function ExercisePage() {
           {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
+
+      {lastWorkout && (
+        <section className="mt-8 border-t border-gray-800 pt-4">
+          <h2 className="text-sm font-semibold text-gray-200 mb-1">
+            Last time you did this exercise
+          </h2>
+          <p className="text-xs text-gray-400 mb-3">{lastWorkout.date}</p>
+          <div className="flex flex-col gap-1">
+            {lastWorkout.sets.map((set, index) => (
+              <div
+                key={set.id}
+                className="inline-flex items-center justify-between rounded bg-gray-800/80 px-3 py-2 text-sm text-gray-200"
+              >
+                <span className="text-xs text-gray-400 mr-2">Set {index + 1}</span>
+                <span className="flex-1 text-right">
+                  {set.weight} {unit} × {set.reps}
+                  {set.notes ? (
+                    <span className="ml-1.5 text-gray-400 text-xs">({set.notes})</span>
+                  ) : null}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="mt-6 flex gap-2 justify-between">
         {prevExercise ? (
