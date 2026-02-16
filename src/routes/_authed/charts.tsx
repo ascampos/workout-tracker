@@ -22,66 +22,98 @@ const exerciseList = (() => {
   return out
 })()
 
-function topSetPerSession(history: HistoryEntry[]): { timestamp: string; weight: number }[] {
+function topSetPerSession(history: HistoryEntry[]): { timestamp: string; est1rm: number }[] {
   const bySession = new Map<string, HistoryEntry[]>()
   for (const row of history) {
     const list = bySession.get(row.session_id) ?? []
     list.push(row)
     bySession.set(row.session_id, list)
   }
-  const result: { timestamp: string; weight: number }[] = []
+  const result: { timestamp: string; est1rm: number }[] = []
   for (const rows of bySession.values()) {
-    const top = rows.reduce((best, r) => (r.weight > best.weight ? r : best), rows[0])
-    result.push({ timestamp: top.timestamp, weight: top.weight })
+    // Use highest estimated 1RM (Epley) in each session
+    const top = rows.reduce(
+      (best, r) => {
+        const best1rm = best.weight * (1 + best.reps / 30)
+        const current1rm = r.weight * (1 + r.reps / 30)
+        return current1rm > best1rm ? r : best
+      },
+      rows[0]
+    )
+    const est1rm = top.weight * (1 + top.reps / 30)
+    result.push({ timestamp: top.timestamp, est1rm })
   }
   result.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
   return result
 }
 
-function SimpleLineChart({ data }: { data: { timestamp: string; weight: number }[] }) {
+function SimpleLineChart({ data }: { data: { timestamp: string; est1rm: number }[] }) {
   if (data.length === 0) {
     return (
       <p className="text-gray-400 text-sm py-8 text-center">No data yet. Log some sets to see progress.</p>
     )
   }
-  const weights = data.map((d) => d.weight)
-  const minW = Math.min(...weights)
-  const maxW = Math.max(...weights)
-  const range = maxW - minW || 1
-  const padding = { top: 8, right: 8, bottom: 24, left: 36 }
+  const values = data.map((d) => d.est1rm)
+  const minV = Math.min(...values)
+  const maxV = Math.max(...values)
+  const range = maxV - minV || 1
+  const padding = { top: 8, right: 8, bottom: 28, left: 40 }
   const width = 280
-  const height = 160
+  const height = 168
   const innerW = width - padding.left - padding.right
   const innerH = height - padding.top - padding.bottom
+  const x0 = padding.left
+  const y0 = padding.top + innerH
   const points = data.map((d, i) => {
-    const x = padding.left + (i / Math.max(1, data.length - 1)) * innerW
-    const y = padding.top + innerH - ((d.weight - minW) / range) * innerH
+    const x = x0 + (i / Math.max(1, data.length - 1)) * innerW
+    const y = padding.top + innerH - ((d.est1rm - minV) / range) * innerH
     return `${x},${y}`
   })
   const path = points.length >= 2 ? `M ${points.join(' L ')}` : ''
+  const formatDate = (ts: string) =>
+    new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const firstDate = data.length > 0 ? formatDate(data[0].timestamp) : ''
+  const lastDate = data.length > 1 ? formatDate(data[data.length - 1].timestamp) : ''
   return (
     <div className="overflow-x-auto min-w-0">
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full max-w-md h-40 text-gray-300" preserveAspectRatio="xMidYMid meet">
-        <text x={padding.left - 4} y={padding.top + innerH / 2} textAnchor="end" fontSize={10} fill="currentColor">
-          {maxW}
+        {/* Y-axis */}
+        <line x1={x0} y1={padding.top} x2={x0} y2={y0} stroke="currentColor" strokeWidth="1" opacity={0.6} />
+        {/* X-axis */}
+        <line x1={x0} y1={y0} x2={x0 + innerW} y2={y0} stroke="currentColor" strokeWidth="1" opacity={0.6} />
+        <text x={x0 - 6} y={padding.top + 4} textAnchor="end" fontSize={10} fill="currentColor" opacity={0.9}>
+          {maxV.toFixed(0)}
         </text>
-        <text x={padding.left - 4} y={height - padding.bottom + 4} textAnchor="end" fontSize={10} fill="currentColor">
-          {minW}
+        <text x={x0 - 6} y={y0 + 4} textAnchor="end" fontSize={10} fill="currentColor" opacity={0.9}>
+          {minV.toFixed(0)}
         </text>
+        <text x={x0 - 6} y={padding.top + innerH / 2} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.7}>
+          1RM
+        </text>
+        {firstDate && (
+          <text x={x0} y={height - 6} textAnchor="start" fontSize={9} fill="currentColor" opacity={0.7}>
+            {firstDate}
+          </text>
+        )}
+        {lastDate && data.length > 1 && (
+          <text x={x0 + innerW} y={height - 6} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.7}>
+            {lastDate}
+          </text>
+        )}
         {path ? (
           <path d={path} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         ) : null}
         {data.map((d, i) => (
           <circle
             key={d.timestamp + i}
-            cx={padding.left + (i / Math.max(1, data.length - 1)) * innerW}
-            cy={padding.top + innerH - ((d.weight - minW) / range) * innerH}
+            cx={x0 + (i / Math.max(1, data.length - 1)) * innerW}
+            cy={padding.top + innerH - ((d.est1rm - minV) / range) * innerH}
             r={4}
             fill="currentColor"
           />
         ))}
       </svg>
-      <p className="text-gray-500 text-xs mt-1">Weight over sessions (top set per session)</p>
+      <p className="text-gray-500 text-xs mt-1">Estimated 1RM over sessions (top set per session)</p>
     </div>
   )
 }

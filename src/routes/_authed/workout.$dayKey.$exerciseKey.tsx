@@ -66,6 +66,125 @@ function clearExerciseDraft(dayKey: string, exerciseKey: string) {
 
 type ModalState = { type: 'weight' | 'reps'; setIndex: number } | null
 
+type ProgressPoint = { timestamp: string; est1rm: number }
+
+function topSetPerSession(history: HistoryEntry[]): ProgressPoint[] {
+  const bySession = new Map<string, HistoryEntry[]>()
+  for (const row of history) {
+    const list = bySession.get(row.session_id) ?? []
+    list.push(row)
+    bySession.set(row.session_id, list)
+  }
+  const result: ProgressPoint[] = []
+  for (const rows of bySession.values()) {
+    // Use highest estimated 1RM (Epley) in each session
+    const top = rows.reduce(
+      (best, r) => {
+        const best1rm = best.weight * (1 + best.reps / 30)
+        const current1rm = r.weight * (1 + r.reps / 30)
+        return current1rm > best1rm ? r : best
+      },
+      rows[0]
+    )
+    const est1rm = top.weight * (1 + top.reps / 30)
+    result.push({ timestamp: top.timestamp, est1rm })
+  }
+  result.sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+  return result
+}
+
+function SimpleLineChart({ data }: { data: ProgressPoint[] }) {
+  if (data.length === 0) {
+    return (
+      <p className="text-gray-400 text-sm py-6 text-center">
+        No history yet for this exercise. Log some sets to see your progress.
+      </p>
+    )
+  }
+
+  const values = data.map((d) => d.est1rm)
+  const minV = Math.min(...values)
+  const maxV = Math.max(...values)
+  const range = maxV - minV || 1
+
+  const padding = { top: 8, right: 8, bottom: 28, left: 40 }
+  const width = 280
+  const height = 168
+  const innerW = width - padding.left - padding.right
+  const innerH = height - padding.top - padding.bottom
+  const x0 = padding.left
+  const y0 = padding.top + innerH
+
+  const points = data.map((d, i) => {
+    const x = x0 + (i / Math.max(1, data.length - 1)) * innerW
+    const y = padding.top + innerH - ((d.est1rm - minV) / range) * innerH
+    return `${x},${y}`
+  })
+
+  const path = points.length >= 2 ? `M ${points.join(' L ')}` : ''
+
+  const formatDate = (ts: string) =>
+    new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const firstDate = data.length > 0 ? formatDate(data[0].timestamp) : ''
+  const lastDate = data.length > 1 ? formatDate(data[data.length - 1].timestamp) : ''
+
+  return (
+    <div className="overflow-x-auto min-w-0">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full max-w-md h-40 text-gray-300"
+        preserveAspectRatio="xMidYMid meet"
+      >
+        {/* Y-axis */}
+        <line x1={x0} y1={padding.top} x2={x0} y2={y0} stroke="currentColor" strokeWidth="1" opacity={0.6} />
+        {/* X-axis */}
+        <line x1={x0} y1={y0} x2={x0 + innerW} y2={y0} stroke="currentColor" strokeWidth="1" opacity={0.6} />
+        {/* Y-axis labels */}
+        <text x={x0 - 6} y={padding.top + 4} textAnchor="end" fontSize={10} fill="currentColor" opacity={0.9}>
+          {maxV.toFixed(0)}
+        </text>
+        <text x={x0 - 6} y={y0 + 4} textAnchor="end" fontSize={10} fill="currentColor" opacity={0.9}>
+          {minV.toFixed(0)}
+        </text>
+        <text x={x0 - 6} y={padding.top + innerH / 2} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.7}>
+          1RM
+        </text>
+        {/* X-axis labels */}
+        {firstDate && (
+          <text x={x0} y={height - 6} textAnchor="start" fontSize={9} fill="currentColor" opacity={0.7}>
+            {firstDate}
+          </text>
+        )}
+        {lastDate && data.length > 1 && (
+          <text x={x0 + innerW} y={height - 6} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.7}>
+            {lastDate}
+          </text>
+        )}
+        {path ? (
+          <path
+            d={path}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ) : null}
+        {data.map((d, i) => (
+          <circle
+            key={d.timestamp + i}
+            cx={x0 + (i / Math.max(1, data.length - 1)) * innerW}
+            cy={padding.top + innerH - ((d.est1rm - minV) / range) * innerH}
+            r={4}
+            fill="currentColor"
+          />
+        ))}
+      </svg>
+      <p className="text-gray-500 text-xs mt-1">Estimated 1RM over sessions (top set per session)</p>
+    </div>
+  )
+}
+
 function SelectModal({
   isOpen,
   onClose,
@@ -194,6 +313,7 @@ function ExercisePage() {
   const [frequency, setFrequency] = useState<number | null>(null)
   const [modalState, setModalState] = useState<ModalState>(null)
   const [lastWorkout, setLastWorkout] = useState<{ date: string; sets: HistoryEntry[] } | null>(null)
+  const [progressData, setProgressData] = useState<ProgressPoint[]>([])
 
   useEffect(() => {
     if (!exercise) return
@@ -202,6 +322,7 @@ function ExercisePage() {
 
   useEffect(() => {
     getHistoryFn({ data: { exerciseKey } }).then((history) => {
+      setProgressData(topSetPerSession(history))
       const first = history[0]
       if (first) setLastSet({ weight: first.weight, reps: first.reps, notes: first.notes })
       else setLastSet(null)
@@ -363,6 +484,12 @@ function ExercisePage() {
         </Link>
         <h1 className="text-xl font-bold truncate min-w-0">{exercise.exercise_name}</h1>
       </div>
+
+      {/* Progress chart */}
+      <section className="mb-6 border-b border-gray-800 pb-4">
+        <h2 className="text-sm font-semibold text-gray-200 mb-2">Progress</h2>
+        <SimpleLineChart data={progressData} />
+      </section>
 
       {/* Stats section */}
       {(heaviestSet != null || frequency != null) && (
