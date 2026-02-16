@@ -17,6 +17,12 @@ export type LoggedSet = {
   updated_at?: string
 }
 
+/** A data point for the estimated 1RM progress chart. */
+export type ProgressPoint = {
+  timestamp: string
+  est1rm: number
+}
+
 /** A single set entry as submitted from the client. */
 export type SetEntry = {
   exercise_key: string
