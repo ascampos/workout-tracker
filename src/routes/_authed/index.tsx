@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { workoutTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
-import { getSessionHistoryFn, type SessionSummary } from '@/utils/log-sets'
+import { useQuery } from '@tanstack/react-query'
+import { sessionHistoryQuery } from '@/lib/queries'
 
 export const Route = createFileRoute('/_authed/')({
   component: HomePage,
@@ -43,24 +44,18 @@ function formatRecentSessionDate(iso: string): string {
 }
 
 function HomePage() {
-  const [recentSessions, setRecentSessions] = useState<SessionSummary[]>([])
-  const [sessionsLoading, setSessionsLoading] = useState(true)
-
-  useEffect(() => {
-    getSessionHistoryFn()
-      .then(({ sessions }) => {
-        // Group by session_id so each session appears once (newest first already)
-        const seen = new Set<string>()
-        const unique = sessions.filter((s) => {
-          if (seen.has(s.session_id)) return false
-          seen.add(s.session_id)
-          return true
-        })
-        setRecentSessions(unique.slice(0, RECENT_SESSIONS_LIMIT))
+  const { data, isLoading: sessionsLoading } = useQuery(sessionHistoryQuery())
+  const recentSessions = useMemo(() => {
+    if (!data) return []
+    const seen = new Set<string>()
+    return data.sessions
+      .filter((s) => {
+        if (seen.has(s.session_id)) return false
+        seen.add(s.session_id)
+        return true
       })
-      .catch(() => setRecentSessions([]))
-      .finally(() => setSessionsLoading(false))
-  }, [])
+      .slice(0, RECENT_SESSIONS_LIMIT)
+  }, [data])
 
   return (
     <div className="p-4 max-w-md mx-auto">

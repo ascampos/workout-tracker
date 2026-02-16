@@ -1,41 +1,27 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState, useEffect } from 'react'
-import { getSessionHistoryFn, updateSetFn, deleteSetFn, type SessionSummary, type SessionSet } from '@/utils/log-sets'
+import { useState } from 'react'
+import { updateSetFn, deleteSetFn, type SessionSet } from '@/utils/log-sets'
 import { SessionCard, EditSetModal } from '@/components/session-card'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { sessionHistoryQuery, queryKeys } from '@/lib/queries'
 
 export const Route = createFileRoute('/_authed/history')({
   component: HistoryPage,
 })
 
 function HistoryPage() {
-  const [sessions, setSessions] = useState<SessionSummary[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data, isLoading: loading, error } = useQuery(sessionHistoryQuery())
+  const sessions = data?.sessions ?? []
+  const queryClient = useQueryClient()
   const [editingSet, setEditingSet] = useState<SessionSet | null>(null)
   const [operatingSetId, setOperatingSetId] = useState<string | null>(null)
-
-  const fetchSessions = () => {
-    setLoading(true)
-    setError(null)
-    getSessionHistoryFn()
-      .then(({ sessions: list }) => setSessions(list))
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load history'))
-      .finally(() => setLoading(false))
-  }
-
-  useEffect(() => {
-    fetchSessions()
-  }, [])
 
   const handleSaveSet = async (id: string, weight: number, reps: number, notes: string) => {
     setOperatingSetId(id)
     try {
       const result = await updateSetFn({ data: { id, weight, reps, notes } })
-      if (result.success) {
-        await fetchSessions()
-      } else {
-        throw new Error(result.error)
-      }
+      if (!result.success) throw new Error(result.error)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.sessionHistory() })
     } finally {
       setOperatingSetId(null)
     }
@@ -50,11 +36,8 @@ function HistoryPage() {
     setOperatingSetId(set.id)
     try {
       const result = await deleteSetFn({ data: { id: set.id } })
-      if (result.success) {
-        await fetchSessions()
-      } else {
-        throw new Error(result.error)
-      }
+      if (!result.success) throw new Error(result.error)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.sessionHistory() })
     } catch (err) {
       alert(`Failed to delete set: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {
@@ -80,7 +63,7 @@ function HistoryPage() {
       )}
       {error && (
         <p className="text-red-400 py-4 text-center" role="alert">
-          {error}
+          {error instanceof Error ? error.message : 'Failed to load history'}
         </p>
       )}
       {!loading && !error && sessions.length === 0 && (

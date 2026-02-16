@@ -5,6 +5,8 @@ import {
   createRootRoute,
 } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState } from 'react'
 
 import appCss from '../styles.css?url'
 import { useAppSession } from '@/utils/session'
@@ -49,5 +51,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
-  return <Outlet />
+  const [queryClient] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { staleTime: 60_000, retry: 1 } } })
+  )
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Outlet />
+    </QueryClientProvider>
+  )
 }

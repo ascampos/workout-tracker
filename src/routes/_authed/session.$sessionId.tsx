@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState, useEffect } from 'react'
-import { getSessionHistoryFn, updateSetFn, deleteSetFn, type SessionSummary, type SessionSet } from '@/utils/log-sets'
+import { useState, useMemo } from 'react'
+import { updateSetFn, deleteSetFn, type SessionSet } from '@/utils/log-sets'
 import { SessionCard, EditSetModal } from '@/components/session-card'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { sessionHistoryQuery, queryKeys } from '@/lib/queries'
 
 export const Route = createFileRoute('/_authed/session/$sessionId')({
   component: SessionDetailPage,
@@ -9,37 +11,21 @@ export const Route = createFileRoute('/_authed/session/$sessionId')({
 
 function SessionDetailPage() {
   const { sessionId } = Route.useParams()
-  const [session, setSession] = useState<SessionSummary | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data, isLoading: loading, error } = useQuery(sessionHistoryQuery())
+  const session = useMemo(
+    () => data?.sessions.find((s) => s.session_id === sessionId) ?? null,
+    [data, sessionId]
+  )
+  const queryClient = useQueryClient()
   const [editingSet, setEditingSet] = useState<SessionSet | null>(null)
   const [operatingSetId, setOperatingSetId] = useState<string | null>(null)
-
-  const fetchSession = () => {
-    setLoading(true)
-    setError(null)
-    getSessionHistoryFn()
-      .then(({ sessions: list }) => {
-        const found = list.find((s) => s.session_id === sessionId) ?? null
-        setSession(found)
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load session'))
-      .finally(() => setLoading(false))
-  }
-
-  useEffect(() => {
-    fetchSession()
-  }, [sessionId])
 
   const handleSaveSet = async (id: string, weight: number, reps: number, notes: string) => {
     setOperatingSetId(id)
     try {
       const result = await updateSetFn({ data: { id, weight, reps, notes } })
-      if (result.success) {
-        await fetchSession()
-      } else {
-        throw new Error(result.error)
-      }
+      if (!result.success) throw new Error(result.error)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.sessionHistory() })
     } finally {
       setOperatingSetId(null)
     }
@@ -54,11 +40,8 @@ function SessionDetailPage() {
     setOperatingSetId(set.id)
     try {
       const result = await deleteSetFn({ data: { id: set.id } })
-      if (result.success) {
-        await fetchSession()
-      } else {
-        throw new Error(result.error)
-      }
+      if (!result.success) throw new Error(result.error)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.sessionHistory() })
     } catch (err) {
       alert(`Failed to delete set: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {
@@ -84,7 +67,7 @@ function SessionDetailPage() {
       )}
       {error && (
         <p className="text-red-400 py-4 text-center" role="alert">
-          {error}
+          {error instanceof Error ? error.message : 'Failed to load session'}
         </p>
       )}
       {!loading && !error && !session && (

@@ -1,11 +1,13 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { workoutTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
-import { logSetsFn, getHistoryFn } from '@/utils/log-sets'
-import type { LoggedSet, ProgressPoint } from '@/types'
+import { logSetsFn } from '@/utils/log-sets'
+import type { LoggedSet } from '@/types'
 import { topSetPerSession } from '@/utils/fitness'
 import { ProgressChart } from '@/components/progress-chart'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { historyQuery, queryKeys } from '@/lib/queries'
 
 // Standard gym weight increments (in lb)
 const WEIGHT_PRESETS = [
@@ -194,101 +196,62 @@ function ExercisePage() {
   const [sets, setSets] = useState<SetInput[]>(() => readExerciseDraft(dayKey, exerciseKey) ?? [])
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
-  const [lastSet, setLastSet] = useState<{ weight: number; reps: number; notes: string } | null>(null)
-  const [heaviestSet, setHeaviestSet] = useState<{ weight: number; reps: number; daysAgo: number } | null>(null)
-  const [frequency, setFrequency] = useState<number | null>(null)
   const [modalState, setModalState] = useState<ModalState>(null)
-  const [lastWorkout, setLastWorkout] = useState<{ date: string; sets: LoggedSet[] } | null>(null)
-  const [progressData, setProgressData] = useState<ProgressPoint[]>([])
+  const queryClient = useQueryClient()
+
+  const { data: history = [] } = useQuery(historyQuery(exerciseKey))
+
+  const progressData = useMemo(() => topSetPerSession(history), [history])
+
+  const lastSet = useMemo(() => {
+    const first = history[0]
+    return first ? { weight: first.weight, reps: first.reps, notes: first.notes } : null
+  }, [history])
+
+  const heaviestSet = useMemo(() => {
+    if (history.length === 0) return null
+    const heaviest = history.reduce((max, curr) => (curr.weight > max.weight ? curr : max), history[0])
+    const daysAgo = Math.floor((Date.now() - new Date(heaviest.timestamp).getTime()) / (1000 * 60 * 60 * 24))
+    return { weight: heaviest.weight, reps: heaviest.reps, daysAgo }
+  }, [history])
+
+  const frequency = useMemo(() => {
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    const recentSessions = new Set(
+      history.filter((e) => new Date(e.timestamp) >= thirtyDaysAgo).map((e) => e.session_id)
+    )
+    return recentSessions.size
+  }, [history])
+
+  const lastWorkout = useMemo(() => {
+    if (history.length === 0) return null
+    const bySession = new Map<string, LoggedSet[]>()
+    for (const entry of history) {
+      const list = bySession.get(entry.session_id) ?? []
+      list.push(entry)
+      bySession.set(entry.session_id, list)
+    }
+    const sessionGroups = Array.from(bySession.values()).sort(
+      (a, b) => (b[0]?.timestamp ?? '').localeCompare(a[0]?.timestamp ?? '')
+    )
+    let chosen: LoggedSet[] | null = null
+    for (const group of sessionGroups) {
+      if (group[0] && group[0].session_id !== sessionId) { chosen = group; break }
+    }
+    if (!chosen) chosen = sessionGroups[0] ?? null
+    if (!chosen || chosen.length === 0) return null
+    const sortedSets = [...chosen].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    const dateLabel = new Date(sortedSets[0].timestamp).toLocaleDateString(undefined, {
+      month: 'short', day: 'numeric', year: 'numeric',
+    })
+    return { date: dateLabel, sets: sortedSets }
+  }, [history, sessionId])
 
   useEffect(() => {
     if (!exercise) return
     writeExerciseDraft(dayKey, exerciseKey, sets)
   }, [dayKey, exerciseKey, exercise, sets])
-
-  useEffect(() => {
-    getHistoryFn({ data: { exerciseKey } }).then((history) => {
-      setProgressData(topSetPerSession(history))
-      const first = history[0]
-      if (first) setLastSet({ weight: first.weight, reps: first.reps, notes: first.notes })
-      else setLastSet(null)
-
-      // Calculate heaviest set
-      if (history.length > 0) {
-        const heaviest = history.reduce(
-          (max, curr) => (curr.weight > max.weight ? curr : max),
-          history[0]
-        )
-        const heaviestDate = new Date(heaviest.timestamp)
-        const now = new Date()
-        const diffMs = now.getTime() - heaviestDate.getTime()
-        const daysAgo = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-        setHeaviestSet({ weight: heaviest.weight, reps: heaviest.reps, daysAgo })
-      } else {
-        setHeaviestSet(null)
-      }
-
-      // Calculate frequency (last 30 days)
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-      const recentSessions = new Set<string>()
-      for (const entry of history) {
-        const entryDate = new Date(entry.timestamp)
-        if (entryDate >= thirtyDaysAgo) {
-          recentSessions.add(entry.session_id)
-        }
-      }
-      setFrequency(recentSessions.size)
-
-      // Find the most recent prior workout session for this exercise
-      if (history.length === 0) {
-        setLastWorkout(null)
-        return
-      }
-
-      const bySession = new Map<string, LoggedSet[]>()
-      for (const entry of history) {
-        const list = bySession.get(entry.session_id) ?? []
-        list.push(entry)
-        bySession.set(entry.session_id, list)
-      }
-
-      const sessionGroups = Array.from(bySession.values()).sort((a, b) => {
-        const aTime = a[0]?.timestamp ?? ''
-        const bTime = b[0]?.timestamp ?? ''
-        return bTime.localeCompare(aTime)
-      })
-
-      let chosen: LoggedSet[] | null = null
-      for (const group of sessionGroups) {
-        if (group[0] && group[0].session_id !== sessionId) {
-          chosen = group
-          break
-        }
-      }
-
-      if (!chosen && sessionGroups[0]) {
-        chosen = sessionGroups[0]
-      }
-
-      if (!chosen || chosen.length === 0) {
-        setLastWorkout(null)
-        return
-      }
-
-      // Sort sets chronologically within the chosen session
-      const sortedSets = [...chosen].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-      const firstTimestamp = sortedSets[0].timestamp
-      const firstDate = new Date(firstTimestamp)
-      const dateLabel = firstDate.toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
-
-      setLastWorkout({ date: dateLabel, sets: sortedSets })
-    })
-  }, [exerciseKey, sessionId])
 
   function copyLastSet() {
     if (!lastSet) return
@@ -352,6 +315,8 @@ function ExercisePage() {
       clearExerciseDraft(dayKey, exerciseKey)
       setSets([])
       setSaveMessage({ type: 'ok', text: 'Saved.' })
+      queryClient.invalidateQueries({ queryKey: queryKeys.history(exerciseKey) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.sessionHistory() })
     } else {
       setSaveMessage({ type: 'err', text: result.error ?? 'Save failed' })
     }
