@@ -3,15 +3,11 @@ import { useAppSession } from '@/utils/session'
 import { appendSetLogRows, getSetLogHistory, getAllSetLogRows, updateSetLogById, deleteSetLogById } from '@/utils/sheets'
 import { workoutTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
+import type { SetEntry, LoggedSet, SessionSet, SessionExercise, SessionSummary } from '@/types'
 
-export type SetEntry = {
-  exercise_key: string
-  weight: number
-  reps: number
-  notes?: string
-}
+export type { SetEntry, LoggedSet, SessionSet, SessionExercise, SessionSummary }
 
-export type LogSetsPayload = {
+type LogSetsPayload = {
   sessionId: string
   dayKey: WorkoutDayKey
   unit: string
@@ -68,7 +64,6 @@ export const logSetsFn = createServerFn({ method: 'POST' })
     return { success: true as const }
   })
 
-export type HistoryEntry = { id: string; timestamp: string; session_id: string; weight: number; reps: number; notes: string; updated_at?: string }
 
 export const getHistoryFn = createServerFn({ method: 'GET' })
   .inputValidator((d: { exerciseKey: string }) => d)
@@ -78,7 +73,7 @@ export const getHistoryFn = createServerFn({ method: 'GET' })
     const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID
     if (!spreadsheetId || !data?.exerciseKey) return []
     const rows = await getSetLogHistory(spreadsheetId, data.exerciseKey, 50)
-    return rows.map((r): HistoryEntry => ({ id: r.id, timestamp: r.timestamp, session_id: r.session_id, weight: r.weight, reps: r.reps, notes: r.notes, updated_at: r.updated_at }))
+    return rows
   })
 
 const exerciseKeyToName = (() => {
@@ -91,15 +86,6 @@ const exerciseKeyToName = (() => {
   return m
 })()
 
-export type SessionSet = { id: string; weight: number; reps: number; notes: string; unit: string; timestamp: string; updated_at?: string }
-export type SessionExercise = { exercise_key: string; exercise_name: string; sets: SessionSet[] }
-export type SessionSummary = {
-  session_id: string
-  started_at: string
-  day_key: string
-  day_name: string
-  exercises: SessionExercise[]
-}
 
 export const getSessionHistoryFn = createServerFn({ method: 'GET' })
   .handler(async () => {
@@ -204,7 +190,7 @@ export const updateSetFn = createServerFn({ method: 'POST' })
     }
 
     try {
-      const updates: Partial<Pick<import('@/utils/sheets').HistoryRow, 'weight' | 'reps' | 'notes'>> = {}
+      const updates: Partial<Pick<LoggedSet, 'weight' | 'reps' | 'notes'>> = {}
       if (data.weight !== undefined) updates.weight = data.weight
       if (data.reps !== undefined) updates.reps = data.reps
       if (data.notes !== undefined) updates.notes = data.notes

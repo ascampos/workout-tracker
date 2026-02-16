@@ -2,7 +2,8 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
 import { workoutTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
-import { logSetsFn, getHistoryFn, type HistoryEntry } from '@/utils/log-sets'
+import { logSetsFn, getHistoryFn } from '@/utils/log-sets'
+import type { LoggedSet } from '@/types'
 
 // Standard gym weight increments (in lb)
 const WEIGHT_PRESETS = [
@@ -68,8 +69,8 @@ type ModalState = { type: 'weight' | 'reps'; setIndex: number } | null
 
 type ProgressPoint = { timestamp: string; est1rm: number }
 
-function topSetPerSession(history: HistoryEntry[]): ProgressPoint[] {
-  const bySession = new Map<string, HistoryEntry[]>()
+function topSetPerSession(history: LoggedSet[]): ProgressPoint[] {
+  const bySession = new Map<string, LoggedSet[]>()
   for (const row of history) {
     const list = bySession.get(row.session_id) ?? []
     list.push(row)
@@ -312,7 +313,7 @@ function ExercisePage() {
   const [heaviestSet, setHeaviestSet] = useState<{ weight: number; reps: number; daysAgo: number } | null>(null)
   const [frequency, setFrequency] = useState<number | null>(null)
   const [modalState, setModalState] = useState<ModalState>(null)
-  const [lastWorkout, setLastWorkout] = useState<{ date: string; sets: HistoryEntry[] } | null>(null)
+  const [lastWorkout, setLastWorkout] = useState<{ date: string; sets: LoggedSet[] } | null>(null)
   const [progressData, setProgressData] = useState<ProgressPoint[]>([])
 
   useEffect(() => {
@@ -360,7 +361,7 @@ function ExercisePage() {
         return
       }
 
-      const bySession = new Map<string, HistoryEntry[]>()
+      const bySession = new Map<string, LoggedSet[]>()
       for (const entry of history) {
         const list = bySession.get(entry.session_id) ?? []
         list.push(entry)
@@ -373,7 +374,7 @@ function ExercisePage() {
         return bTime.localeCompare(aTime)
       })
 
-      let chosen: HistoryEntry[] | null = null
+      let chosen: LoggedSet[] | null = null
       for (const group of sessionGroups) {
         if (group[0] && group[0].session_id !== sessionId) {
           chosen = group

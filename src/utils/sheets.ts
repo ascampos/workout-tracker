@@ -7,19 +7,9 @@ import { google } from 'googleapis'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { nanoid } from 'nanoid'
+import type { LoggedSet } from '@/types'
 
-type SetLogRow = {
-  id?: string  // optional for backward compatibility during migration
-  timestamp: string
-  session_id: string
-  day_key: string
-  exercise_key: string
-  weight: number
-  reps: number
-  notes: string
-  unit: string
-  updated_at?: string  // when the set was last edited; never overwrite timestamp
-}
+export type { LoggedSet }
 
 function loadServiceAccountCredentials(): { credentials: object } | { error: string } {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
@@ -83,7 +73,7 @@ function getSheetsClient(): ReturnType<typeof google.sheets> | null {
 
 export async function appendSetLogRows(
   spreadsheetId: string,
-  rows: SetLogRow[]
+  rows: Omit<LoggedSet, 'id'>[]
 ): Promise<string[]> {
   const sheets = getSheetsClient()
   if (!sheets) {
@@ -92,7 +82,7 @@ export async function appendSetLogRows(
   }
   const ids: string[] = []
   const values = rows.map((r) => {
-    const id = r.id ?? nanoid()
+    const id = nanoid()
     ids.push(id)
     return [
       id,           // id is now the first column
@@ -116,24 +106,11 @@ export async function appendSetLogRows(
   return ids
 }
 
-export type HistoryRow = {
-  id: string
-  timestamp: string
-  session_id: string
-  day_key: string
-  exercise_key: string
-  weight: number
-  reps: number
-  notes: string
-  unit: string
-  updated_at?: string  // when the set was last edited; original log time stays in timestamp
-}
-
 export async function getSetLogHistory(
   spreadsheetId: string,
   exerciseKey: string,
   limit: number = 100
-): Promise<HistoryRow[]> {
+): Promise<LoggedSet[]> {
   const sheets = getSheetsClient()
   if (!sheets) return []
   const res = await sheets.spreadsheets.values.get({
@@ -159,7 +136,7 @@ export async function getSetLogHistory(
   const unitIdx = header.indexOf('unit')
   const updatedAtIdx = header.indexOf('updated_at')
   if ([idIdx, tsIdx, exIdx, weightIdx, repsIdx].some((i) => i === -1)) return []
-  const out: HistoryRow[] = []
+  const out: LoggedSet[] = []
   for (let i = startRow; i < rows.length; i++) {
     const r = rows[i] as unknown[]
     if (r[exIdx] !== exerciseKey) continue
@@ -183,7 +160,7 @@ export async function getSetLogHistory(
   return out.slice(0, limit)
 }
 
-function rowKey(r: HistoryRow): string {
+function rowKey(r: LoggedSet): string {
   return `${r.timestamp}|${r.session_id}|${r.day_key}|${r.exercise_key}|${r.weight}|${r.reps}`
 }
 
@@ -194,7 +171,7 @@ function rowKey(r: HistoryRow): string {
 export async function getAllSetLogRows(
   spreadsheetId: string,
   limit: number = 500
-): Promise<HistoryRow[]> {
+): Promise<LoggedSet[]> {
   const sheets = getSheetsClient()
   if (!sheets) return []
   const res = await sheets.spreadsheets.values.get({
@@ -220,7 +197,7 @@ export async function getAllSetLogRows(
   const unitIdx = header.indexOf('unit')
   const updatedAtIdx = header.indexOf('updated_at')
   if ([idIdx, tsIdx, exIdx, weightIdx, repsIdx].some((i) => i === -1)) return []
-  const out: HistoryRow[] = []
+  const out: LoggedSet[] = []
   for (let i = startRow; i < rows.length; i++) {
     const r = rows[i] as unknown[]
     const weight = Number(r[weightIdx])
@@ -241,7 +218,7 @@ export async function getAllSetLogRows(
   }
   out.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
   const seen = new Set<string>()
-  const deduped: HistoryRow[] = []
+  const deduped: LoggedSet[] = []
   for (const row of out) {
     const key = rowKey(row)
     if (seen.has(key)) continue
@@ -287,7 +264,7 @@ async function findRowIndexById(
 export async function updateSetLogById(
   spreadsheetId: string,
   id: string,
-  updates: Partial<Pick<HistoryRow, 'weight' | 'reps' | 'notes'>>
+  updates: Partial<Pick<LoggedSet, 'weight' | 'reps' | 'notes'>>
 ): Promise<void> {
   const sheets = getSheetsClient()
   if (!sheets) {

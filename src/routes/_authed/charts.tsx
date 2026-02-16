@@ -2,7 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState, useEffect, useMemo } from 'react'
 import { workoutTemplates } from '@/data/templates'
 import { getHistoryFn } from '@/utils/log-sets'
-import type { HistoryEntry } from '@/utils/log-sets'
+import type { LoggedSet } from '@/types'
 
 export const Route = createFileRoute('/_authed/charts')({
   component: ChartsPage,
@@ -22,8 +22,8 @@ const exerciseList = (() => {
   return out
 })()
 
-function topSetPerSession(history: HistoryEntry[]): { timestamp: string; est1rm: number }[] {
-  const bySession = new Map<string, HistoryEntry[]>()
+function topSetPerSession(history: LoggedSet[]): { timestamp: string; est1rm: number }[] {
+  const bySession = new Map<string, LoggedSet[]>()
   for (const row of history) {
     const list = bySession.get(row.session_id) ?? []
     list.push(row)
@@ -120,7 +120,7 @@ function SimpleLineChart({ data }: { data: { timestamp: string; est1rm: number }
 
 function ChartsPage() {
   const [exerciseKey, setExerciseKey] = useState(exerciseList[0]?.exercise_key ?? '')
-  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [history, setHistory] = useState<LoggedSet[]>([])
 
   useEffect(() => {
     if (!exerciseKey) return
