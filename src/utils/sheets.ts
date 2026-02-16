@@ -61,6 +61,29 @@ function loadServiceAccountCredentials(): { credentials: object } | { error: str
   }
 }
 
+const CACHE_TTL_MS = 30_000
+let rawRowsCache: { spreadsheetId: string; rows: unknown[][]; expiresAt: number } | null = null
+
+async function getRawRows(spreadsheetId: string): Promise<unknown[][]> {
+  if (rawRowsCache && rawRowsCache.spreadsheetId === spreadsheetId && Date.now() < rawRowsCache.expiresAt) {
+    return rawRowsCache.rows
+  }
+  const sheets = getSheetsClient()
+  if (!sheets) return []
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'set_log',
+    valueRenderOption: 'UNFORMATTED_VALUE',
+  })
+  const rows = (res.data.values as unknown[][] | undefined) ?? []
+  rawRowsCache = { spreadsheetId, rows, expiresAt: Date.now() + CACHE_TTL_MS }
+  return rows
+}
+
+function invalidateRawRowsCache() {
+  rawRowsCache = null
+}
+
 function getSheetsClient(): ReturnType<typeof google.sheets> | null {
   const result = loadServiceAccountCredentials()
   if ('error' in result) return null
@@ -103,6 +126,7 @@ export async function appendSetLogRows(
     valueInputOption: 'USER_ENTERED',
     requestBody: { values },
   })
+  invalidateRawRowsCache()
   return ids
 }
 
@@ -111,14 +135,7 @@ export async function getSetLogHistory(
   exerciseKey: string,
   limit: number = 100
 ): Promise<LoggedSet[]> {
-  const sheets = getSheetsClient()
-  if (!sheets) return []
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: 'set_log',
-    valueRenderOption: 'UNFORMATTED_VALUE',
-  })
-  const rows = res.data.values as unknown[][] | undefined
+  const rows = await getRawRows(spreadsheetId)
   if (!Array.isArray(rows) || rows.length === 0) return []
   const first = rows[0].map((c) => String(c).toLowerCase().replace(/\s+/g, '_'))
   const hasHeader =
@@ -172,14 +189,7 @@ export async function getAllSetLogRows(
   spreadsheetId: string,
   limit: number = 500
 ): Promise<LoggedSet[]> {
-  const sheets = getSheetsClient()
-  if (!sheets) return []
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: 'set_log',
-    valueRenderOption: 'UNFORMATTED_VALUE',
-  })
-  const rows = res.data.values as unknown[][] | undefined
+  const rows = await getRawRows(spreadsheetId)
   if (!Array.isArray(rows) || rows.length === 0) return []
   const first = rows[0].map((c) => String(c).toLowerCase().replace(/\s+/g, '_'))
   const hasHeader =
@@ -326,6 +336,7 @@ export async function updateSetLogById(
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [updatedRow] }
   })
+  invalidateRawRowsCache()
 }
 
 /**
@@ -365,4 +376,5 @@ export async function deleteSetLogById(
       }]
     }
   })
+  invalidateRawRowsCache()
 }

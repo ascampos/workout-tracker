@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { SessionSummary, SessionSet } from '@/utils/log-sets'
+import type { SessionSummary, SessionSet } from '@/types'
 
 export function formatSessionDate(iso: string): string {
   if (!iso) return '—'
