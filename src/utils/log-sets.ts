@@ -37,6 +37,11 @@ export const logSetsFn = createServerFn({ method: 'POST' })
         return { success: false as const, error: 'Invalid set entry' }
       }
     }
+    // Derive day_key from sessionId (format: YYYY-MM-DD-<dayKey>) to prevent
+    // client/server mismatch bugs where session_id and day_key disagree.
+    const derivedDayKey = data.sessionId.slice(11) as WorkoutDayKey
+    const dayKey = validDayKeys.includes(derivedDayKey) ? derivedDayKey : data.dayKey
+
     const timestamp = new Date().toISOString()
     const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID
     if (spreadsheetId) {
@@ -46,12 +51,13 @@ export const logSetsFn = createServerFn({ method: 'POST' })
           data.sets.map((s) => ({
             timestamp,
             session_id: data.sessionId,
-            day_key: data.dayKey,
+            day_key: dayKey,
             exercise_key: s.exercise_key,
             weight: s.weight,
             reps: s.reps,
             notes: s.notes ?? '',
             unit: data.unit,
+            is_warmup: s.is_warmup ?? false,
           }))
         )
       } catch (err) {
@@ -157,6 +163,7 @@ export type UpdateSetPayload = {
   weight?: number
   reps?: number
   notes?: string
+  is_warmup?: boolean
 }
 
 export const updateSetFn = createServerFn({ method: 'POST' })
@@ -172,7 +179,7 @@ export const updateSetFn = createServerFn({ method: 'POST' })
     }
 
     // Validate that at least one field is being updated
-    if (data.weight === undefined && data.reps === undefined && data.notes === undefined) {
+    if (data.weight === undefined && data.reps === undefined && data.notes === undefined && data.is_warmup === undefined) {
       return { success: false as const, error: 'No fields to update' }
     }
 
@@ -190,10 +197,11 @@ export const updateSetFn = createServerFn({ method: 'POST' })
     }
 
     try {
-      const updates: Partial<Pick<LoggedSet, 'weight' | 'reps' | 'notes'>> = {}
+      const updates: Partial<Pick<LoggedSet, 'weight' | 'reps' | 'notes' | 'is_warmup'>> = {}
       if (data.weight !== undefined) updates.weight = data.weight
       if (data.reps !== undefined) updates.reps = data.reps
       if (data.notes !== undefined) updates.notes = data.notes
+      if (data.is_warmup !== undefined) updates.is_warmup = data.is_warmup
 
       await updateSetLogById(spreadsheetId, data.id, updates)
       return { success: true as const }

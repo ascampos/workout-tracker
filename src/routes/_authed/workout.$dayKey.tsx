@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Outlet } from '@tanstack/react-router'
 import { workoutTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
+import { getSessionIdForDay } from '@/utils/session-id'
 
 export const Route = createFileRoute('/_authed/workout/$dayKey')({
   validateSearch: () => ({}),
@@ -10,6 +11,7 @@ export const Route = createFileRoute('/_authed/workout/$dayKey')({
 function WorkoutDayLayout() {
   const { dayKey } = Route.useParams()
   const template = workoutTemplates[dayKey as WorkoutDayKey]
+  const sessionId = getSessionIdForDay(dayKey)
 
   if (!template) {
     return (
@@ -29,7 +31,14 @@ function WorkoutDayLayout() {
         >
           ←
         </Link>
-        <h1 className="text-2xl font-bold truncate min-w-0">{template.dayName}</h1>
+        <h1 className="text-2xl font-bold truncate min-w-0 flex-1">{template.dayName}</h1>
+        <Link
+          to="/session/$sessionId"
+          params={{ sessionId }}
+          className="shrink-0 text-sm text-green-400 hover:text-green-300"
+        >
+          Finish
+        </Link>
       </div>
       <Outlet />
     </div>

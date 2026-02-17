@@ -14,6 +14,7 @@ export type LoggedSet = {
   reps: number
   notes: string
   unit: string
+  is_warmup?: boolean
   updated_at?: string
 }
 
@@ -29,6 +30,7 @@ export type SetEntry = {
   weight: number
   reps: number
   notes?: string
+  is_warmup?: boolean
 }
 
 /** A set belonging to a session, enriched with unit and timestamps. */

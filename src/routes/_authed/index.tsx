@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { workoutTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
 import { useQuery } from '@tanstack/react-query'
@@ -9,12 +9,7 @@ export const Route = createFileRoute('/_authed/')({
   component: HomePage,
 })
 
-const dayKeys: WorkoutDayKey[] = [
-  'upper_a',
-  'lower_a',
-  'upper_b',
-  'lower_b',
-]
+const ROTATION: WorkoutDayKey[] = ['upper_a', 'lower_a', 'upper_b', 'lower_b']
 
 const RECENT_SESSIONS_LIMIT = 10
 
@@ -57,20 +52,36 @@ function HomePage() {
       .slice(0, RECENT_SESSIONS_LIMIT)
   }, [data])
 
+  const suggestedKey = useMemo<WorkoutDayKey>(() => {
+    const lastDayKey = recentSessions[0]?.day_key as WorkoutDayKey | undefined
+    if (!lastDayKey) return 'upper_a'
+    const idx = ROTATION.indexOf(lastDayKey)
+    if (idx === -1) return 'upper_a'
+    return ROTATION[(idx + 1) % ROTATION.length]
+  }, [recentSessions])
+
   return (
     <div className="p-4 max-w-md mx-auto">
       <h1 className="text-2xl font-bold text-center mb-6">Pick a Workout</h1>
       <div className="flex flex-col gap-3">
-        {dayKeys.map((key) => {
+        {ROTATION.map((key) => {
           const template = workoutTemplates[key]
+          const isSuggested = key === suggestedKey && recentSessions.length > 0
           return (
             <Link
               key={key}
               to="/workout/$dayKey"
               params={{ dayKey: key }}
-              className="flex w-full min-h-[48px] p-5 text-lg font-medium text-center rounded-lg bg-gray-800 border border-gray-700 hover:bg-gray-700 active:bg-gray-600 items-center justify-center"
+              className={`flex w-full min-h-[48px] p-5 text-lg font-medium rounded-lg border items-center justify-between transition-opacity ${
+                isSuggested
+                  ? 'bg-gray-800 border-blue-500 text-white'
+                  : 'bg-gray-800 border-gray-700 hover:bg-gray-700 active:bg-gray-600 opacity-70'
+              }`}
             >
-              {template.dayName}
+              <span>{template.dayName}</span>
+              {isSuggested && (
+                <span className="text-xs font-normal text-blue-400 ml-2">Suggested</span>
+              )}
             </Link>
           )
         })}

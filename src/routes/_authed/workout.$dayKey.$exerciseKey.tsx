@@ -1,14 +1,15 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { workoutTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
 import { logSetsFn } from '@/utils/log-sets'
 import type { LoggedSet } from '@/types'
-import { topSetPerSession } from '@/utils/fitness'
+import { topSetPerSession, detectPR } from '@/utils/fitness'
 import { ProgressChart } from '@/components/progress-chart'
 import { SelectModal } from '@/components/select-modal'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { historyQuery, queryKeys } from '@/lib/queries'
+import { getSessionIdForDay } from '@/utils/session-id'
 
 // Standard gym weight increments (in lb)
 const WEIGHT_PRESETS = [
@@ -26,16 +27,10 @@ export const Route = createFileRoute('/_authed/workout/$dayKey/$exerciseKey')({
   component: ExercisePage,
 })
 
-type SetInput = { weight: string; reps: string; notes: string }
+type SetInput = { weight: string; reps: string; notes: string; is_warmup: boolean }
 
 const unit = 'lb'
 const DRAFT_KEY_PREFIX = 'workout-draft-'
-
-/** One session per calendar day per day_key so different days don't share a session_id. */
-function getSessionIdForDay(dayKey: string): string {
-  const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
-  return `${today}-${dayKey}`
-}
 
 function readExerciseDraft(dayKey: string, exerciseKey: string): SetInput[] | null {
   try {
@@ -70,7 +65,21 @@ function clearExerciseDraft(dayKey: string, exerciseKey: string) {
   }
 }
 
+function formatRestTime(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
 type ModalState = { type: 'weight' | 'reps'; setIndex: number } | null
+
+function adjustWeight(current: string, delta: number): string {
+  const n = parseFloat(current)
+  const base = Number.isFinite(n) ? n : 0
+  const result = Math.max(0, base + delta)
+  // Keep one decimal place only if needed
+  return result % 1 === 0 ? String(result) : result.toFixed(1)
+}
 
 function ExercisePage() {
   const { dayKey, exerciseKey } = Route.useParams()
@@ -82,6 +91,9 @@ function ExercisePage() {
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [modalState, setModalState] = useState<ModalState>(null)
+  const [restEnd, setRestEnd] = useState<number | null>(null)
+  const [restRemaining, setRestRemaining] = useState(0)
+  const restIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const queryClient = useQueryClient()
 
   const { data: history = [] } = useQuery(historyQuery(exerciseKey))
@@ -94,8 +106,9 @@ function ExercisePage() {
   }, [history])
 
   const heaviestSet = useMemo(() => {
-    if (history.length === 0) return null
-    const heaviest = history.reduce((max, curr) => (curr.weight > max.weight ? curr : max), history[0])
+    const working = history.filter((s) => !s.is_warmup)
+    if (working.length === 0) return null
+    const heaviest = working.reduce((max, curr) => (curr.weight > max.weight ? curr : max), working[0])
     const daysAgo = Math.floor((Date.now() - new Date(heaviest.timestamp).getTime()) / (1000 * 60 * 60 * 24))
     return { weight: heaviest.weight, reps: heaviest.reps, daysAgo }
   }, [history])
@@ -133,15 +146,36 @@ function ExercisePage() {
     return { date: dateLabel, sets: sortedSets }
   }, [history, sessionId])
 
+  // Resolve superset partner
+  const supersetPartner = useMemo(() => {
+    if (!exercise?.superset_partner_key || !template) return null
+    const partner = template.exercises.find((ex) => ex.exercise_key === exercise.superset_partner_key)
+    return partner ?? null
+  }, [exercise, template])
+
+  // Rest timer effect
+  useEffect(() => {
+    if (restEnd === null) {
+      if (restIntervalRef.current) clearInterval(restIntervalRef.current)
+      return
+    }
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((restEnd - Date.now()) / 1000))
+      setRestRemaining(remaining)
+      if (remaining === 0) {
+        setRestEnd(null)
+        if (restIntervalRef.current) clearInterval(restIntervalRef.current)
+      }
+    }
+    tick()
+    restIntervalRef.current = setInterval(tick, 500)
+    return () => { if (restIntervalRef.current) clearInterval(restIntervalRef.current) }
+  }, [restEnd])
+
   useEffect(() => {
     if (!exercise) return
     writeExerciseDraft(dayKey, exerciseKey, sets)
   }, [dayKey, exerciseKey, exercise, sets])
-
-  function copyLastSet() {
-    if (!lastSet) return
-    setSets((prev) => [...prev, { weight: String(lastSet.weight), reps: String(lastSet.reps), notes: lastSet.notes }])
-  }
 
   if (!template || !exercise) {
     return (
@@ -159,10 +193,39 @@ function ExercisePage() {
       : null
 
   function addSet() {
-    setSets((prev) => [...prev, { weight: '', reps: '', notes: '' }])
+    setSets((prev) => {
+      // Auto-fill: first set gets last session's first working set; subsequent sets get the previous set
+      let defaultWeight = ''
+      let defaultReps = ''
+      const isFirst = prev.length === 0
+      if (isFirst && lastWorkout) {
+        const firstWorking = lastWorkout.sets.find((s) => !s.is_warmup)
+        if (firstWorking) {
+          defaultWeight = String(firstWorking.weight)
+          defaultReps = String(firstWorking.reps)
+        }
+      } else if (prev.length > 0) {
+        const last = prev[prev.length - 1]
+        defaultWeight = last.weight
+        defaultReps = last.reps
+      }
+      // First set auto-flagged as warmup if history exists (user can toggle off)
+      const is_warmup = isFirst && history.length > 0
+      return [...prev, { weight: defaultWeight, reps: defaultReps, notes: '', is_warmup }]
+    })
   }
 
-  function updateSet(setIndex: number, field: keyof SetInput, value: string) {
+  function loadLastSession() {
+    if (!lastWorkout) return
+    setSets(lastWorkout.sets.map((s) => ({
+      weight: String(s.weight),
+      reps: String(s.reps),
+      notes: s.notes,
+      is_warmup: s.is_warmup ?? false,
+    })))
+  }
+
+  function updateSet(setIndex: number, field: keyof SetInput, value: string | boolean) {
     setSets((prev) => {
       const next = [...prev]
       if (!next[setIndex]) return prev
@@ -173,6 +236,11 @@ function ExercisePage() {
 
   function removeSet(setIndex: number) {
     setSets((prev) => prev.filter((_, i) => i !== setIndex))
+  }
+
+  function startRestTimer() {
+    const seconds = exercise?.rest_seconds ?? 150
+    setRestEnd(Date.now() + seconds * 1000)
   }
 
   async function handleSave() {
@@ -186,9 +254,13 @@ function ExercisePage() {
           weight: w,
           reps: r,
           notes: s.notes.trim() || undefined,
+          is_warmup: s.is_warmup,
         }
       })
       .filter((s): s is NonNullable<typeof s> => s != null)
+
+    // Check for PR before saving (using current history snapshot)
+    const isPR = detectPR(payload, history)
 
     setSaving(true)
     setSaveMessage(null)
@@ -199,7 +271,8 @@ function ExercisePage() {
     if (result.success) {
       clearExerciseDraft(dayKey, exerciseKey)
       setSets([])
-      setSaveMessage({ type: 'ok', text: 'Saved.' })
+      setSaveMessage({ type: 'ok', text: isPR ? 'Saved. New PR! 🏆' : 'Saved.' })
+      startRestTimer()
       queryClient.invalidateQueries({ queryKey: queryKeys.history(exerciseKey) })
       queryClient.invalidateQueries({ queryKey: queryKeys.sessionHistory() })
     } else {
@@ -208,7 +281,7 @@ function ExercisePage() {
   }
 
   return (
-    <div className="w-full min-w-0 max-w-md mx-auto px-4">
+    <div className="w-full min-w-0 max-w-md mx-auto px-4 pb-24">
       <div className="flex items-center gap-3 mb-4 min-w-0">
         <Link
           to="/workout/$dayKey"
@@ -221,6 +294,20 @@ function ExercisePage() {
         <h1 className="text-xl font-bold truncate min-w-0">{exercise.exercise_name}</h1>
       </div>
 
+      {/* Superset quick-jump */}
+      {supersetPartner && (
+        <Link
+          to="/workout/$dayKey/$exerciseKey"
+          params={{ dayKey, exerciseKey: supersetPartner.exercise_key }}
+          className="flex items-center gap-2 mb-4 px-3 py-2 rounded border border-gray-700 bg-gray-800 text-blue-400 text-sm hover:bg-gray-700 w-full"
+        >
+          <span className="text-gray-500">Superset</span>
+          <span>⇄</span>
+          <span>{supersetPartner.exercise_name}</span>
+          <span className="ml-auto text-gray-500">→</span>
+        </Link>
+      )}
+
       {/* Progress chart */}
       <section className="mb-6 border-b border-gray-800 pb-4">
         <h2 className="text-sm font-semibold text-gray-200 mb-2">Progress</h2>
@@ -230,7 +317,6 @@ function ExercisePage() {
       {/* Stats section */}
       {(heaviestSet != null || frequency != null) && (
         <div className="mb-6 grid grid-cols-2 gap-4">
-          {/* Heaviest set */}
           <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
             <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">Heaviest Set</div>
             {heaviestSet ? (
@@ -247,7 +333,6 @@ function ExercisePage() {
             )}
           </div>
 
-          {/* Frequency */}
           <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
             <div className="text-xs text-gray-400 uppercase tracking-wide mb-2">Frequency</div>
             {frequency != null ? (
@@ -267,59 +352,109 @@ function ExercisePage() {
           <span className="text-gray-400 text-sm">
             Last: {lastSet.weight} {unit} × {lastSet.reps}
           </span>
-          <button
-            type="button"
-            onClick={copyLastSet}
-            className="text-sm text-blue-400 hover:text-blue-300"
-          >
-            Copy last set
-          </button>
         </div>
       )}
 
-      <div className="space-y-2">
+      {/* Set list */}
+      <div className="space-y-3">
         {sets.map((set, i) => (
           <div
             key={i}
-            className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 items-center min-w-0"
+            className={`rounded border p-2 space-y-2 ${set.is_warmup ? 'border-yellow-700/50 bg-yellow-900/10' : 'border-gray-700 bg-gray-800/30'}`}
           >
-            <button
-              type="button"
-              onClick={() => setModalState({ type: 'weight', setIndex: i })}
-              className={`p-3 rounded border text-left min-w-0 w-full ${
-                set.weight
-                  ? 'bg-gray-800 border-gray-700 text-white'
-                  : 'bg-gray-800/50 border-gray-700 text-gray-500'
-              }`}
-            >
-              {set.weight ? `${set.weight} ${unit}` : 'Weight'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setModalState({ type: 'reps', setIndex: i })}
-              className={`p-3 rounded border text-left min-w-0 w-full ${
-                set.reps
-                  ? 'bg-gray-800 border-gray-700 text-white'
-                  : 'bg-gray-800/50 border-gray-700 text-gray-500'
-              }`}
-            >
-              {set.reps ? `${set.reps} reps` : 'Reps'}
-            </button>
-            <button
-              type="button"
-              onClick={() => removeSet(i)}
-              className="p-3 text-sm text-red-400 hover:text-red-300 hover:bg-gray-800 rounded border border-gray-700 shrink-0 whitespace-nowrap"
-              aria-label="Remove set"
-            >
-              Remove
-            </button>
-            <input
-              type="text"
-              placeholder="Notes"
-              value={set.notes}
-              onChange={(e) => updateSet(i, 'notes', e.target.value)}
-              className="p-3 col-span-2 min-w-0 rounded bg-gray-800 border border-gray-700 text-white placeholder-gray-500 w-full"
-            />
+            {/* Row 1: warmup toggle + weight stepper + reps + remove */}
+            <div className="flex items-center gap-2 min-w-0">
+              {/* Warmup toggle */}
+              <button
+                type="button"
+                onClick={() => updateSet(i, 'is_warmup', !set.is_warmup)}
+                className={`shrink-0 px-2 py-1.5 rounded text-xs font-medium border ${
+                  set.is_warmup
+                    ? 'bg-yellow-600/80 border-yellow-600 text-yellow-100'
+                    : 'bg-gray-700 border-gray-600 text-gray-400'
+                }`}
+                title="Toggle warmup set"
+              >
+                W
+              </button>
+
+              {/* Weight: stepper + tap-for-modal */}
+              <div className="flex items-center min-w-0 flex-1 rounded border border-gray-700 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => updateSet(i, 'weight', adjustWeight(set.weight, -5))}
+                  className="px-2 py-2 text-gray-400 hover:text-white hover:bg-gray-700 text-sm shrink-0"
+                >
+                  −5
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalState({ type: 'weight', setIndex: i })}
+                  className={`flex-1 py-2 text-center text-sm min-w-0 ${
+                    set.weight ? 'text-white' : 'text-gray-500'
+                  } ${set.is_warmup ? 'text-yellow-200/70' : ''}`}
+                >
+                  {set.weight ? `${set.weight} ${unit}` : 'Weight'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateSet(i, 'weight', adjustWeight(set.weight, 5))}
+                  className="px-2 py-2 text-gray-400 hover:text-white hover:bg-gray-700 text-sm shrink-0"
+                >
+                  +5
+                </button>
+              </div>
+
+              {/* Reps */}
+              <button
+                type="button"
+                onClick={() => setModalState({ type: 'reps', setIndex: i })}
+                className={`shrink-0 w-16 py-2 rounded border text-center text-sm ${
+                  set.reps
+                    ? `border-gray-700 ${set.is_warmup ? 'text-yellow-200/70' : 'text-white'}`
+                    : 'border-gray-700 text-gray-500'
+                } bg-transparent`}
+              >
+                {set.reps ? `${set.reps}r` : 'Reps'}
+              </button>
+
+              {/* Remove */}
+              <button
+                type="button"
+                onClick={() => removeSet(i)}
+                className="shrink-0 px-2 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-gray-800 rounded border border-gray-700"
+                aria-label="Remove set"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Row 2: fine steppers + notes */}
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => updateSet(i, 'weight', adjustWeight(set.weight, -2.5))}
+                  className="px-2 py-1 text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-700 rounded border border-gray-700"
+                >
+                  −2.5
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateSet(i, 'weight', adjustWeight(set.weight, 2.5))}
+                  className="px-2 py-1 text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-700 rounded border border-gray-700"
+                >
+                  +2.5
+                </button>
+              </div>
+              <input
+                type="text"
+                placeholder="Notes"
+                value={set.notes}
+                onChange={(e) => updateSet(i, 'notes', e.target.value)}
+                className="flex-1 min-w-0 px-2 py-1 text-sm rounded bg-gray-800 border border-gray-700 text-white placeholder-gray-500"
+              />
+            </div>
           </div>
         ))}
       </div>
@@ -327,10 +462,21 @@ function ExercisePage() {
       <button
         type="button"
         onClick={addSet}
-        className="w-full min-h-[48px] mt-2 p-3 text-sm rounded border border-dashed border-gray-600 text-gray-400 hover:border-gray-500 hover:text-gray-300"
+        className="w-full min-h-[48px] mt-3 p-3 text-sm rounded border border-dashed border-gray-600 text-gray-400 hover:border-gray-500 hover:text-gray-300"
       >
-        Add set
+        + Add set
       </button>
+
+      {/* Load last session button */}
+      {lastWorkout && sets.length === 0 && (
+        <button
+          type="button"
+          onClick={loadLastSession}
+          className="w-full mt-2 p-2 text-sm text-blue-400 hover:text-blue-300 border border-gray-700 rounded hover:bg-gray-800"
+        >
+          Load last time ({lastWorkout.sets.length} sets · {lastWorkout.date})
+        </button>
+      )}
 
       <div className="mt-6 space-y-2">
         {saveMessage && (
@@ -358,16 +504,20 @@ function ExercisePage() {
       {lastWorkout && (
         <section className="mt-8 border-t border-gray-800 pt-4">
           <h2 className="text-sm font-semibold text-gray-200 mb-1">
-            Last time you did this exercise
+            Last time
           </h2>
           <p className="text-xs text-gray-400 mb-3">{lastWorkout.date}</p>
           <div className="flex flex-col gap-1">
             {lastWorkout.sets.map((set, index) => (
               <div
                 key={set.id}
-                className="inline-flex items-center justify-between rounded bg-gray-800/80 px-3 py-2 text-sm text-gray-200"
+                className={`inline-flex items-center justify-between rounded px-3 py-2 text-sm ${
+                  set.is_warmup ? 'bg-yellow-900/20 text-yellow-200/60' : 'bg-gray-800/80 text-gray-200'
+                }`}
               >
-                <span className="text-xs text-gray-400 mr-2">Set {index + 1}</span>
+                <span className={`text-xs mr-2 ${set.is_warmup ? 'text-yellow-600' : 'text-gray-400'}`}>
+                  {set.is_warmup ? 'W' : `Set ${index + 1}`}
+                </span>
                 <span className="flex-1 text-right">
                   {set.weight} {unit} × {set.reps}
                   {set.notes ? (
@@ -433,6 +583,23 @@ function ExercisePage() {
         currentValue={modalState?.setIndex != null ? sets[modalState.setIndex]?.reps : undefined}
         inputMode="numeric"
       />
+
+      {/* Rest timer floating pill */}
+      {restEnd !== null && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+          <button
+            type="button"
+            onClick={() => setRestEnd(null)}
+            className="flex items-center gap-3 px-6 py-3 rounded-full bg-gray-800 border border-gray-600 text-white shadow-lg hover:bg-gray-700"
+          >
+            <span className="text-gray-400 text-sm">Rest</span>
+            <span className="text-xl font-mono font-bold tabular-nums">
+              {formatRestTime(restRemaining)}
+            </span>
+            <span className="text-gray-500 text-xs">tap to dismiss</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }

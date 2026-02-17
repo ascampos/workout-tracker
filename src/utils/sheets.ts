@@ -108,16 +108,17 @@ export async function appendSetLogRows(
     const id = nanoid()
     ids.push(id)
     return [
-      id,           // id is now the first column
-      r.timestamp,
-      r.session_id,
-      r.day_key,
-      r.exercise_key,
-      r.unit,
-      r.weight,
-      r.reps,
-      r.notes ?? '',
-      r.updated_at ?? '',  // empty = never updated; only set when editing
+      id,                           // A: id
+      r.timestamp,                  // B: timestamp
+      r.session_id,                 // C: session_id
+      r.day_key,                    // D: day_key
+      r.exercise_key,               // E: exercise_key
+      r.unit,                       // F: unit
+      r.weight,                     // G: weight
+      r.reps,                       // H: reps
+      r.notes ?? '',                // I: notes
+      r.is_warmup ? 'TRUE' : 'FALSE', // J: is_warmup
+      r.updated_at ?? '',           // K: updated_at (empty = never edited)
     ]
   })
   await sheets.spreadsheets.values.append({
@@ -140,7 +141,7 @@ export async function getSetLogHistory(
   const first = rows[0].map((c) => String(c).toLowerCase().replace(/\s+/g, '_'))
   const hasHeader =
     first.includes('timestamp') && first.includes('exercise_key')
-  const header = hasHeader ? first : ['id', 'timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes', 'updated_at']
+  const header = hasHeader ? first : ['id', 'timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes', 'is_warmup', 'updated_at']
   const startRow = hasHeader ? 1 : 0
   const idIdx = header.indexOf('id')
   const tsIdx = header.indexOf('timestamp')
@@ -151,6 +152,7 @@ export async function getSetLogHistory(
   const repsIdx = header.indexOf('reps')
   const notesIdx = header.indexOf('notes')
   const unitIdx = header.indexOf('unit')
+  const isWarmupIdx = header.indexOf('is_warmup')
   const updatedAtIdx = header.indexOf('updated_at')
   if ([idIdx, tsIdx, exIdx, weightIdx, repsIdx].some((i) => i === -1)) return []
   const out: LoggedSet[] = []
@@ -170,7 +172,8 @@ export async function getSetLogHistory(
       reps,
       notes: notesIdx >= 0 ? String(r[notesIdx] ?? '') : '',
       unit: unitIdx >= 0 ? String(r[unitIdx] ?? '') : 'lb',
-      updated_at: (updatedAtIdx >= 0 && r[updatedAtIdx] != null ? String(r[updatedAtIdx]) : (r.length >= 10 && r[9] != null ? String(r[9]) : undefined)) || undefined,
+      is_warmup: isWarmupIdx >= 0 ? String(r[isWarmupIdx] ?? '').toUpperCase() === 'TRUE' : false,
+      updated_at: (updatedAtIdx >= 0 && r[updatedAtIdx] != null ? String(r[updatedAtIdx]) : undefined) || undefined,
     })
   }
   out.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
@@ -194,7 +197,7 @@ export async function getAllSetLogRows(
   const first = rows[0].map((c) => String(c).toLowerCase().replace(/\s+/g, '_'))
   const hasHeader =
     first.includes('timestamp') && first.includes('exercise_key')
-  const header = hasHeader ? first : ['id', 'timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes', 'updated_at']
+  const header = hasHeader ? first : ['id', 'timestamp', 'session_id', 'day_key', 'exercise_key', 'unit', 'weight', 'reps', 'notes', 'is_warmup', 'updated_at']
   const startRow = hasHeader ? 1 : 0
   const idIdx = header.indexOf('id')
   const tsIdx = header.indexOf('timestamp')
@@ -205,6 +208,7 @@ export async function getAllSetLogRows(
   const repsIdx = header.indexOf('reps')
   const notesIdx = header.indexOf('notes')
   const unitIdx = header.indexOf('unit')
+  const isWarmupIdx = header.indexOf('is_warmup')
   const updatedAtIdx = header.indexOf('updated_at')
   if ([idIdx, tsIdx, exIdx, weightIdx, repsIdx].some((i) => i === -1)) return []
   const out: LoggedSet[] = []
@@ -223,7 +227,8 @@ export async function getAllSetLogRows(
       reps,
       notes: notesIdx >= 0 ? String(r[notesIdx] ?? '') : '',
       unit: unitIdx >= 0 ? String(r[unitIdx] ?? '') : 'lb',
-      updated_at: (updatedAtIdx >= 0 && r[updatedAtIdx] != null ? String(r[updatedAtIdx]) : (r.length >= 10 && r[9] != null ? String(r[9]) : undefined)) || undefined,
+      is_warmup: isWarmupIdx >= 0 ? String(r[isWarmupIdx] ?? '').toUpperCase() === 'TRUE' : false,
+      updated_at: (updatedAtIdx >= 0 && r[updatedAtIdx] != null ? String(r[updatedAtIdx]) : undefined) || undefined,
     })
   }
   out.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
@@ -274,7 +279,7 @@ async function findRowIndexById(
 export async function updateSetLogById(
   spreadsheetId: string,
   id: string,
-  updates: Partial<Pick<LoggedSet, 'weight' | 'reps' | 'notes'>>
+  updates: Partial<Pick<LoggedSet, 'weight' | 'reps' | 'notes' | 'is_warmup'>>
 ): Promise<void> {
   const sheets = getSheetsClient()
   if (!sheets) {
@@ -291,10 +296,10 @@ export async function updateSetLogById(
     throw new Error('Cannot update header row')
   }
 
-  // Read current row to merge updates (A:J to support optional updated_at)
+  // Read current row to merge updates (A:K = 11 columns)
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `set_log!A${rowIndex}:J${rowIndex}`,
+    range: `set_log!A${rowIndex}:K${rowIndex}`,
     valueRenderOption: 'UNFORMATTED_VALUE',
   })
 
@@ -303,7 +308,7 @@ export async function updateSetLogById(
     throw new Error('Row not found or invalid')
   }
 
-  // Structure: [id, timestamp, session_id, day_key, exercise_key, unit, weight, reps, notes, updated_at?]
+  // Structure: [id, timestamp, session_id, day_key, exercise_key, unit, weight, reps, notes, is_warmup, updated_at]
   const rowId = currentRow[0]
   const timestamp = currentRow[1]  // never overwrite – original log time
   const session_id = currentRow[2]
@@ -313,10 +318,15 @@ export async function updateSetLogById(
   const weight = currentRow[6]
   const reps = currentRow[7]
   const notes = currentRow[8]
+  const is_warmup = currentRow[9]  // existing is_warmup value
 
   const updatedAt = new Date().toISOString()
 
-  // Build updated row: only weight, reps, notes change; set updated_at on every edit
+  // Build updated row: weight, reps, notes, is_warmup can change; set updated_at on every edit
+  const newIsWarmup = updates.is_warmup !== undefined
+    ? (updates.is_warmup ? 'TRUE' : 'FALSE')
+    : (is_warmup ?? 'FALSE')
+
   const updatedRow = [
     rowId,
     timestamp,
@@ -327,12 +337,13 @@ export async function updateSetLogById(
     updates.weight !== undefined ? updates.weight : weight,
     updates.reps !== undefined ? updates.reps : reps,
     updates.notes !== undefined ? updates.notes : notes,
+    newIsWarmup,
     updatedAt,
   ]
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `set_log!A${rowIndex}:J${rowIndex}`,
+    range: `set_log!A${rowIndex}:K${rowIndex}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [updatedRow] }
   })
