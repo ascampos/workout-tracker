@@ -209,9 +209,7 @@ function ExercisePage() {
         defaultWeight = last.weight
         defaultReps = last.reps
       }
-      // First set auto-flagged as warmup if history exists (user can toggle off)
-      const is_warmup = isFirst && history.length > 0
-      return [...prev, { weight: defaultWeight, reps: defaultReps, notes: '', is_warmup }]
+      return [...prev, { weight: defaultWeight, reps: defaultReps, notes: '', is_warmup: false }]
     })
   }
 
