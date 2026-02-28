@@ -71,6 +71,13 @@ function formatRestTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+function formatSetAge(timestamp: string): string {
+  const days = Math.floor((Date.now() - new Date(timestamp).getTime()) / (1000 * 60 * 60 * 24))
+  if (days === 0) return 'today'
+  if (days === 1) return '1 day ago'
+  return `${days} days ago`
+}
+
 type ModalState = { type: 'weight' | 'reps'; setIndex: number } | null
 
 function adjustWeight(current: string, delta: number): string {
@@ -100,9 +107,14 @@ function ExercisePage() {
 
   const progressData = useMemo(() => topSetPerSession(history), [history])
 
-  const lastSet = useMemo(() => {
-    const first = history[0]
-    return first ? { weight: first.weight, reps: first.reps, notes: first.notes } : null
+  const recentSets = useMemo(() => {
+    return history.slice(0, 15).map((s) => ({
+      weight: s.weight,
+      reps: s.reps,
+      notes: s.notes,
+      is_warmup: s.is_warmup,
+      timestamp: s.timestamp,
+    }))
   }, [history])
 
   const heaviestSet = useMemo(() => {
@@ -345,12 +357,28 @@ function ExercisePage() {
         </div>
       )}
 
-      {lastSet != null && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="text-gray-400 text-sm">
-            Last: {lastSet.weight} {unit} × {lastSet.reps}
-          </span>
-        </div>
+      {recentSets.length > 0 && (
+        <section className="mb-4">
+          <h2 className="text-xs text-gray-500 uppercase tracking-wide mb-2">Recent sets (swipe)</h2>
+          <div className="flex gap-2 overflow-x-auto snap-x snap-mandatory -mx-1 px-1 pb-1 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {recentSets.map((set, i) => (
+              <div
+                key={i}
+                className={`shrink-0 snap-center w-[calc(100%-1rem)] min-w-[140px] max-w-[200px] rounded-lg border px-3 py-2.5 ${
+                  set.is_warmup ? 'border-yellow-700/50 bg-yellow-900/20' : 'border-gray-700 bg-gray-800/50'
+                }`}
+              >
+                <div className="text-sm text-gray-400 mb-0.5">{formatSetAge(set.timestamp)}</div>
+                <div className={`font-semibold ${set.is_warmup ? 'text-yellow-200/90' : 'text-white'}`}>
+                  {set.weight} {unit} × {set.reps}
+                </div>
+                {set.notes ? (
+                  <div className="text-xs text-gray-500 mt-1 truncate">{set.notes}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Set list */}
