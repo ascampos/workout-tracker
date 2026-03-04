@@ -4,8 +4,7 @@ import { workoutTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
 import { logSetsFn } from '@/utils/log-sets'
 import type { LoggedSet } from '@/types'
-import { topSetPerSession, detectPR } from '@/utils/fitness'
-import { ProgressChart } from '@/components/progress-chart'
+import { detectPR } from '@/utils/fitness'
 import { SelectModal } from '@/components/select-modal'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { historyQuery, queryKeys } from '@/lib/queries'
@@ -104,8 +103,6 @@ function ExercisePage() {
   const queryClient = useQueryClient()
 
   const { data: history = [] } = useQuery(historyQuery(exerciseKey))
-
-  const progressData = useMemo(() => topSetPerSession(history), [history])
 
   const recentSets = useMemo(() => {
     return history.slice(0, 15).map((s) => ({
@@ -317,12 +314,6 @@ function ExercisePage() {
           <span className="ml-auto text-gray-500">→</span>
         </Link>
       )}
-
-      {/* Progress chart */}
-      <section className="mb-6 border-b border-gray-800 pb-4">
-        <h2 className="text-sm font-semibold text-gray-200 mb-2">Progress</h2>
-        <ProgressChart data={progressData} emptyMessage="No history yet for this exercise. Log some sets to see your progress." />
-      </section>
 
       {/* Stats section */}
       {(heaviestSet != null || frequency != null) && (
