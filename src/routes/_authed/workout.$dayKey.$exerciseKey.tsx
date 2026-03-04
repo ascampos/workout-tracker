@@ -70,12 +70,6 @@ function formatRestTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-function formatSetAge(timestamp: string): string {
-  const days = Math.floor((Date.now() - new Date(timestamp).getTime()) / (1000 * 60 * 60 * 24))
-  if (days === 0) return 'today'
-  if (days === 1) return '1 day ago'
-  return `${days} days ago`
-}
 
 type ModalState = { type: 'weight' | 'reps'; setIndex: number } | null
 
@@ -104,15 +98,27 @@ function ExercisePage() {
 
   const { data: history = [] } = useQuery(historyQuery(exerciseKey))
 
-  const recentSets = useMemo(() => {
-    return history.slice(0, 15).map((s) => ({
-      weight: s.weight,
-      reps: s.reps,
-      notes: s.notes,
-      is_warmup: s.is_warmup,
-      timestamp: s.timestamp,
-    }))
-  }, [history])
+  const previousWorkouts = useMemo(() => {
+    if (history.length === 0) return []
+    const bySession = new Map<string, LoggedSet[]>()
+    for (const entry of history) {
+      const list = bySession.get(entry.session_id) ?? []
+      list.push(entry)
+      bySession.set(entry.session_id, list)
+    }
+    const sessionGroups = Array.from(bySession.values())
+      .filter((group) => group[0] && group[0].session_id !== sessionId)
+      .sort((a, b) => (b[0]?.timestamp ?? '').localeCompare(a[0]?.timestamp ?? ''))
+    return sessionGroups.map((group) => {
+      const sortedSets = [...group].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+      const dateLabel = new Date(sortedSets[0].timestamp).toLocaleDateString(undefined, {
+        month: 'short', day: 'numeric', year: 'numeric',
+      })
+      return { date: dateLabel, sets: sortedSets }
+    })
+  }, [history, sessionId])
+
+  const lastWorkout = previousWorkouts[0] ?? null
 
   const heaviestSet = useMemo(() => {
     const working = history.filter((s) => !s.is_warmup)
@@ -130,30 +136,6 @@ function ExercisePage() {
     )
     return recentSessions.size
   }, [history])
-
-  const lastWorkout = useMemo(() => {
-    if (history.length === 0) return null
-    const bySession = new Map<string, LoggedSet[]>()
-    for (const entry of history) {
-      const list = bySession.get(entry.session_id) ?? []
-      list.push(entry)
-      bySession.set(entry.session_id, list)
-    }
-    const sessionGroups = Array.from(bySession.values()).sort(
-      (a, b) => (b[0]?.timestamp ?? '').localeCompare(a[0]?.timestamp ?? '')
-    )
-    let chosen: LoggedSet[] | null = null
-    for (const group of sessionGroups) {
-      if (group[0] && group[0].session_id !== sessionId) { chosen = group; break }
-    }
-    if (!chosen) chosen = sessionGroups[0] ?? null
-    if (!chosen || chosen.length === 0) return null
-    const sortedSets = [...chosen].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-    const dateLabel = new Date(sortedSets[0].timestamp).toLocaleDateString(undefined, {
-      month: 'short', day: 'numeric', year: 'numeric',
-    })
-    return { date: dateLabel, sets: sortedSets }
-  }, [history, sessionId])
 
   // Resolve superset partner
   const supersetPartner = useMemo(() => {
@@ -348,30 +330,6 @@ function ExercisePage() {
         </div>
       )}
 
-      {recentSets.length > 0 && (
-        <section className="mb-4">
-          <h2 className="text-xs text-gray-500 uppercase tracking-wide mb-2">Recent sets (swipe)</h2>
-          <div className="flex gap-2 overflow-x-auto snap-x snap-mandatory -mx-1 px-1 pb-1 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {recentSets.map((set, i) => (
-              <div
-                key={i}
-                className={`shrink-0 snap-center w-[calc(100%-1rem)] min-w-[140px] max-w-[200px] rounded-lg border px-3 py-2.5 ${
-                  set.is_warmup ? 'border-yellow-700/50 bg-yellow-900/20' : 'border-gray-700 bg-gray-800/50'
-                }`}
-              >
-                <div className="text-sm text-gray-400 mb-0.5">{formatSetAge(set.timestamp)}</div>
-                <div className={`font-semibold ${set.is_warmup ? 'text-yellow-200/90' : 'text-white'}`}>
-                  {set.weight} {unit} × {set.reps}
-                </div>
-                {set.notes ? (
-                  <div className="text-xs text-gray-500 mt-1 truncate">{set.notes}</div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
       {/* Set list */}
       <div className="space-y-3">
         {sets.map((set, i) => (
@@ -518,29 +476,36 @@ function ExercisePage() {
         </button>
       </div>
 
-      {lastWorkout && (
+      {previousWorkouts.length > 0 && (
         <section className="mt-8 border-t border-gray-800 pt-4">
-          <h2 className="text-sm font-semibold text-gray-200 mb-1">
-            Last time
-          </h2>
-          <p className="text-xs text-gray-400 mb-3">{lastWorkout.date}</p>
-          <div className="flex flex-col gap-1">
-            {lastWorkout.sets.map((set, index) => (
+          <h2 className="text-xs text-gray-500 uppercase tracking-wide mb-2">Previous workouts (swipe)</h2>
+          <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory -mx-1 px-1 pb-1 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {previousWorkouts.map((workout, i) => (
               <div
-                key={set.id}
-                className={`inline-flex items-center justify-between rounded px-3 py-2 text-sm ${
-                  set.is_warmup ? 'bg-yellow-900/20 text-yellow-200/60' : 'bg-gray-800/80 text-gray-200'
-                }`}
+                key={i}
+                className="shrink-0 snap-center w-[calc(100%-1rem)] min-w-[260px] max-w-[320px] rounded-lg border border-gray-700 bg-gray-800/30 p-4"
               >
-                <span className={`text-xs mr-2 ${set.is_warmup ? 'text-yellow-600' : 'text-gray-400'}`}>
-                  {set.is_warmup ? 'W' : `Set ${index + 1}`}
-                </span>
-                <span className="flex-1 text-right">
-                  {set.weight} {unit} × {set.reps}
-                  {set.notes ? (
-                    <span className="ml-1.5 text-gray-400 text-xs">({set.notes})</span>
-                  ) : null}
-                </span>
+                <p className="text-sm font-semibold text-gray-200 mb-3">{workout.date}</p>
+                <div className="flex flex-col gap-1">
+                  {workout.sets.map((set, index) => (
+                    <div
+                      key={set.id}
+                      className={`inline-flex items-center justify-between rounded px-3 py-2 text-sm ${
+                        set.is_warmup ? 'bg-yellow-900/20 text-yellow-200/60' : 'bg-gray-800/80 text-gray-200'
+                      }`}
+                    >
+                      <span className={`text-xs mr-2 ${set.is_warmup ? 'text-yellow-600' : 'text-gray-400'}`}>
+                        {set.is_warmup ? 'W' : `Set ${index + 1}`}
+                      </span>
+                      <span className="flex-1 text-right">
+                        {set.weight} {unit} × {set.reps}
+                        {set.notes ? (
+                          <span className="ml-1.5 text-gray-400 text-xs">({set.notes})</span>
+                        ) : null}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
