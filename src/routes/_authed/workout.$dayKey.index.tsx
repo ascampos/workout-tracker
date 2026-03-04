@@ -2,10 +2,22 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { workoutTemplates, getAllExercises } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
 import { useState } from 'react'
+import { useQueries } from '@tanstack/react-query'
+import { historyQuery } from '@/lib/queries'
+import type { LoggedSet } from '@/types'
 
 export const Route = createFileRoute('/_authed/workout/$dayKey/')({
   component: WorkoutDayIndexPage,
 })
+
+const unit = 'lb'
+
+function getMaxSet(history: LoggedSet[]): string | null {
+  const working = history.filter((s) => !s.is_warmup)
+  if (working.length === 0) return null
+  const max = working.reduce((best, s) => (s.weight > best.weight ? s : best), working[0])
+  return `${max.weight} ${unit} × ${max.reps}`
+}
 
 function WorkoutDayIndexPage() {
   const { dayKey } = Route.useParams()
@@ -26,6 +38,10 @@ function WorkoutDayIndexPage() {
         ex.exercise_name.toLowerCase().includes(searchTerm.toLowerCase())
       )
     : template.exercises
+
+  const historyQueries = useQueries({
+    queries: filteredExercises.map((ex) => historyQuery(ex.exercise_key)),
+  })
 
   return (
     <div className="flex flex-col gap-4">
@@ -54,16 +70,23 @@ function WorkoutDayIndexPage() {
         {filteredExercises.length === 0 ? (
           <p className="text-gray-400 text-center py-4">No exercises found</p>
         ) : (
-          filteredExercises.map((ex) => (
-            <Link
-              key={ex.exercise_key}
-              to="/workout/$dayKey/$exerciseKey"
-              params={{ dayKey, exerciseKey: ex.exercise_key }}
-              className="block w-full p-4 text-left rounded-lg bg-gray-800 border border-gray-700 hover:bg-gray-700"
-            >
-              <span className="font-medium text-gray-200">{ex.exercise_name}</span>
-            </Link>
-          ))
+          filteredExercises.map((ex, i) => {
+            const history = historyQueries[i]?.data ?? []
+            const maxSet = getMaxSet(history)
+            return (
+              <Link
+                key={ex.exercise_key}
+                to="/workout/$dayKey/$exerciseKey"
+                params={{ dayKey, exerciseKey: ex.exercise_key }}
+                className="block w-full p-4 text-left rounded-lg bg-gray-800 border border-gray-700 hover:bg-gray-700"
+              >
+                <span className="font-medium text-gray-200">{ex.exercise_name}</span>
+                {maxSet && (
+                  <p className="text-sm text-gray-500 mt-1">Max: {maxSet}</p>
+                )}
+              </Link>
+            )
+          })
         )}
       </div>
     </div>
