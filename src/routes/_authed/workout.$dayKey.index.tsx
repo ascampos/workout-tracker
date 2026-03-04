@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useSearch } from '@tanstack/react-router'
 import { workoutTemplates, getAllExercises } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
 import { useState } from 'react'
@@ -6,7 +6,12 @@ import { useQueries } from '@tanstack/react-query'
 import { historyQuery } from '@/lib/queries'
 import type { LoggedSet } from '@/types'
 
+const DAY_KEYS: WorkoutDayKey[] = ['upper_a', 'lower_a', 'upper_b', 'lower_b']
+
 export const Route = createFileRoute('/_authed/workout/$dayKey/')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    template: (search.template as WorkoutDayKey) || undefined,
+  }),
   component: WorkoutDayIndexPage,
 })
 
@@ -21,10 +26,11 @@ function getMaxSet(history: LoggedSet[]): string | null {
 
 function WorkoutDayIndexPage() {
   const { dayKey } = Route.useParams()
-  const template = workoutTemplates[dayKey as WorkoutDayKey]
+  const { template: templateKey } = useSearch({ from: '/_authed/workout/$dayKey/' })
+  const sessionTemplate = workoutTemplates[dayKey as WorkoutDayKey]
   const [searchTerm, setSearchTerm] = useState('')
 
-  if (!template) {
+  if (!sessionTemplate) {
     return (
       <div className="w-full min-w-0 max-w-md mx-auto px-4">
         <p className="text-gray-400">Unknown workout day.</p>
@@ -32,12 +38,16 @@ function WorkoutDayIndexPage() {
     )
   }
 
+  const effectiveTemplateKey = (templateKey && DAY_KEYS.includes(templateKey))
+    ? templateKey
+    : (dayKey as WorkoutDayKey)
+  const exerciseTemplate = workoutTemplates[effectiveTemplateKey]
   const allExercises = getAllExercises()
   const filteredExercises = searchTerm.trim()
     ? allExercises.filter((ex) =>
         ex.exercise_name.toLowerCase().includes(searchTerm.toLowerCase())
       )
-    : template.exercises
+    : exerciseTemplate.exercises
 
   const historyQueries = useQueries({
     queries: filteredExercises.map((ex) => historyQuery(ex.exercise_key)),
@@ -45,6 +55,32 @@ function WorkoutDayIndexPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Template selector - use any workout for this session */}
+      <div className="flex flex-wrap gap-2">
+        {DAY_KEYS.map((key) => {
+          const t = workoutTemplates[key]
+          const isActive = effectiveTemplateKey === key
+          return (
+            <Link
+              key={key}
+              to="/workout/$dayKey"
+              params={{ dayKey }}
+              search={{ template: key }}
+              className={`px-3 py-1.5 rounded text-sm font-medium border ${
+                isActive
+                  ? 'bg-gray-700 border-gray-600 text-white'
+                  : 'border-gray-700 text-gray-400 hover:text-gray-300 hover:border-gray-600'
+              }`}
+            >
+              {t.dayName}
+            </Link>
+          )
+        })}
+      </div>
+      <p className="text-xs text-gray-500 -mt-2">
+        Logging into {sessionTemplate.dayName}. Select a workout above to use its exercises.
+      </p>
+
       {/* Search Combobox */}
       <div className="relative">
         <input

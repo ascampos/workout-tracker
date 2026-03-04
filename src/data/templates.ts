@@ -137,6 +137,21 @@ export const workoutTemplates: Record<WorkoutDayKey, WorkoutTemplate> = {
   },
 }
 
+/** Find exercise config in any template. Returns template and exercise, or null. */
+export function findExerciseInTemplates(exerciseKey: string): {
+  template: WorkoutTemplate
+  exercise: WorkoutTemplate['exercises'][number]
+  exerciseIndex: number
+} | null {
+  for (const template of Object.values(workoutTemplates)) {
+    const idx = template.exercises.findIndex((ex) => ex.exercise_key === exerciseKey)
+    if (idx >= 0) {
+      return { template, exercise: template.exercises[idx], exerciseIndex: idx }
+    }
+  }
+  return null
+}
+
 // Get all unique exercises across all workout templates
 export function getAllExercises(): Array<{
   exercise_key: string

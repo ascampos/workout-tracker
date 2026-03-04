@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { workoutTemplates } from '@/data/templates'
+import { workoutTemplates, findExerciseInTemplates } from '@/data/templates'
 import type { WorkoutDayKey } from '@/data/templates'
 import { logSetsFn } from '@/utils/log-sets'
 import type { LoggedSet } from '@/types'
@@ -83,8 +83,10 @@ function adjustWeight(current: string, delta: number): string {
 
 function ExercisePage() {
   const { dayKey, exerciseKey } = Route.useParams()
-  const template = workoutTemplates[dayKey as WorkoutDayKey]
-  const exercise = template?.exercises.find((ex) => ex.exercise_key === exerciseKey)
+  const sessionTemplate = workoutTemplates[dayKey as WorkoutDayKey]
+  const found = findExerciseInTemplates(exerciseKey)
+  const template = found?.template ?? sessionTemplate
+  const exercise = found?.exercise ?? sessionTemplate?.exercises.find((ex) => ex.exercise_key === exerciseKey)
 
   const [sessionId] = useState(() => getSessionIdForDay(dayKey))
   const [sets, setSets] = useState<SetInput[]>(() => readExerciseDraft(dayKey, exerciseKey) ?? [])
@@ -176,10 +178,10 @@ function ExercisePage() {
     )
   }
 
-  const exerciseIndex = template.exercises.findIndex((ex) => ex.exercise_key === exerciseKey)
-  const prevExercise = exerciseIndex > 0 ? template.exercises[exerciseIndex - 1] : null
+  const exerciseIndex = found?.exerciseIndex ?? template.exercises.findIndex((ex) => ex.exercise_key === exerciseKey) ?? -1
+  const prevExercise = template && exerciseIndex > 0 ? template.exercises[exerciseIndex - 1] : null
   const nextExercise =
-    exerciseIndex >= 0 && exerciseIndex < template.exercises.length - 1
+    template && exerciseIndex >= 0 && exerciseIndex < template.exercises.length - 1
       ? template.exercises[exerciseIndex + 1]
       : null
 
@@ -254,7 +256,7 @@ function ExercisePage() {
     setSaving(true)
     setSaveMessage(null)
     const result = await logSetsFn({
-      data: { sessionId, dayKey: template.dayKey, unit, sets: payload },
+      data: { sessionId, dayKey: dayKey as WorkoutDayKey, unit, sets: payload },
     })
     setSaving(false)
     if (result.success) {
@@ -275,8 +277,9 @@ function ExercisePage() {
         <Link
           to="/workout/$dayKey"
           params={{ dayKey }}
+          search={{ template: found && found.template.dayKey !== dayKey ? found.template.dayKey : (dayKey as WorkoutDayKey) }}
           className="text-gray-400 hover:text-white shrink-0"
-          aria-label={`Back to ${template.dayName}`}
+          aria-label={`Back to ${sessionTemplate?.dayName ?? template.dayName}`}
         >
           ←
         </Link>
